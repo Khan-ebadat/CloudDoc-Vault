@@ -1,0 +1,202 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: CloudDoc Vault - Production Serverless Backend (Auth, S3, DynamoDB, Lambda, SNS, API Gateway)
+
+Globals:
+  Function:
+    Timeout: 30
+    MemorySize: 512
+    Runtime: nodejs20.x
+    Architectures:
+      - arm64
+    Environment:
+      Variables:
+        USERS_TABLE_NAME: !Ref UsersTable
+        DOCUMENTS_TABLE_NAME: !Ref DocumentsMetadataTable
+        DOCUMENTS_BUCKET_NAME: !Ref DocumentsBucket
+        SNS_TOPIC_ARN: !Ref DocumentEventsTopic
+        JWT_SECRET: !Sub "vault_secret_${AWS::AccountId}"
+
+Resources:
+  # 1. Private Amazon S3 Bucket with Block Public Access & CORS
+  DocumentsBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub "clouddoc-vault-docs-${AWS::AccountId}-${AWS::Region}"
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      CorsConfiguration:
+        CorsRules:
+          - AllowedHeaders: ['*']
+            AllowedMethods: [GET, PUT, POST, HEAD]
+            AllowedOrigins: ['*']
+            MaxAge: 3600
+
+  # 2. Amazon DynamoDB Table: ClouddocUsers (Credentials Store)
+  UsersTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: ClouddocUsers
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: Email
+          AttributeType: S
+        - AttributeName: UserID
+          AttributeType: S
+      KeySchema:
+        - AttributeName: Email
+          KeyType: HASH
+      GlobalSecondaryIndexes:
+        - IndexName: UserIDIndex
+          KeySchema:
+            - AttributeName: UserID
+              KeyType: HASH
+          Projection:
+            ProjectionType: ALL
+      PointInTimeRecoverySpecification:
+        PointInTimeRecoveryEnabled: true
+
+  # 3. Amazon DynamoDB Table: DocumentsMetadata (Document Details & Permissions)
+  DocumentsMetadataTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: DocumentsMetadata
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: DocumentID
+          AttributeType: S
+        - AttributeName: OwnerID
+          AttributeType: S
+      KeySchema:
+        - AttributeName: DocumentID
+          KeyType: HASH
+      GlobalSecondaryIndexes:
+        - IndexName: OwnerIDIndex
+          KeySchema:
+            - AttributeName: OwnerID
+              KeyType: HASH
+          Projection:
+            ProjectionType: ALL
+      PointInTimeRecoverySpecification:
+        PointInTimeRecoveryEnabled: true
+
+  # 4. Amazon SNS Topic for Events
+  DocumentEventsTopic:
+    Type: AWS::SNS::Topic
+    Properties:
+      TopicName: CloudDocVault_Events
+      DisplayName: "CloudDoc Vault Document Notification Alerts"
+
+  # 5. Amazon API Gateway REST API
+  VaultApiGateway:
+    Type: AWS::Serverless::Api
+    Properties:
+      StageName: prod
+      Cors:
+        AllowMethods: "'GET,POST,PUT,DELETE,OPTIONS'"
+        AllowHeaders: "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'"
+        AllowOrigin: "'*'"
+      BinaryMediaTypes:
+        - 'multipart/form-data'
+        - 'application/octet-stream'
+
+  # 6. Lambda Functions
+  AuthFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: .
+      Handler: handlers/authHandler.handler
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !Ref UsersTable
+      Events:
+        SignupApi:
+          Type: Api
+          Properties:
+            RestApiId: !Ref VaultApiGateway
+            Path: /auth/signup
+            Method: POST
+        LoginApi:
+          Type: Api
+          Properties:
+            RestApiId: !Ref VaultApiGateway
+            Path: /auth/login
+            Method: POST
+
+  UploadDocumentFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: .
+      Handler: handlers/uploadHandler.handler
+      Policies:
+        - S3CrudPolicy:
+            BucketName: !Ref DocumentsBucket
+        - DynamoDBCrudPolicy:
+            TableName: !Ref DocumentsMetadataTable
+        - SNSPublishMessagePolicy:
+            TopicName: !GetAtt DocumentEventsTopic.TopicName
+      Events:
+        UploadApi:
+          Type: Api
+          Properties:
+            RestApiId: !Ref VaultApiGateway
+            Path: /documents
+            Method: POST
+
+  GetDocumentsFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: .
+      Handler: handlers/getDocumentsHandler.handler
+      Policies:
+        - DynamoDBReadPolicy:
+            TableName: !Ref DocumentsMetadataTable
+      Events:
+        GetApi:
+          Type: Api
+          Properties:
+            RestApiId: !Ref VaultApiGateway
+            Path: /documents
+            Method: GET
+
+  ShareDocumentFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: .
+      Handler: handlers/shareHandler.handler
+      Policies:
+        - S3CrudPolicy:
+            BucketName: !Ref DocumentsBucket
+        - DynamoDBCrudPolicy:
+            TableName: !Ref DocumentsMetadataTable
+      Events:
+        ShareApi:
+          Type: Api
+          Properties:
+            RestApiId: !Ref VaultApiGateway
+            Path: /documents/share
+            Method: POST
+
+Outputs:
+  ApiEndpoint:
+    Description: "API Gateway Base URL"
+    Value: !Sub "https://${VaultApiGateway}.execute-api.${AWS::Region}.amazonaws.com/prod"
+  UsersTableName:
+    Description: "DynamoDB Users Table"
+    Value: !Ref UsersTable
+  DocumentsTableName:
+    Description: "DynamoDB Documents Metadata Table"
+    Value: !Ref DocumentsMetadataTable
+  S3BucketName:
+    Description: "Secure Documents S3 Bucket"
+    Value: !Ref DocumentsBucket
+  SnsTopicArn:
+    Description: "SNS Notifications Topic ARN"
+    Value: !Ref DocumentEventsTopic
