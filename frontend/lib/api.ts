@@ -1,4 +1,4 @@
-import { DocumentItem, StorageMetrics, ShareRequest, ShareResponse, AuthResponse, UserSession } from './types';
+import { DocumentItem, StorageMetrics, ShareRequest, ShareResponse, AuthResponse, UserSession, OpenDocumentResponse, EmailNotificationState } from './types';
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || '';
 
@@ -144,6 +144,40 @@ export async function signupUser(email: string, password: string, fullName: stri
   return data;
 }
 
+/**
+ * Re-check this user's SNS email subscription state.
+ * Returns null when notifications are unavailable or the request fails.
+ */
+export async function refreshNotificationStatus(): Promise<EmailNotificationState | null> {
+  const token = getStoredToken();
+
+  if (!API_BASE_URL || !token) {
+    return null;
+  }
+
+  try {
+    const response = await fetch(`${API_BASE_URL}/auth/notifications`, {
+      method: 'GET',
+      headers: { Authorization: `Bearer ${token}` },
+      cache: 'no-store',
+    });
+
+    if (!response.ok) return null;
+
+    const data: { notifications?: EmailNotificationState } = await response.json();
+    if (!data.notifications) return null;
+
+    const storedUser = getStoredUser();
+    if (storedUser) {
+      storeSession(token, { ...storedUser, notifications: data.notifications });
+    }
+
+    return data.notifications;
+  } catch {
+    return null;
+  }
+}
+
 export async function fetchDocuments(): Promise<{ documents: DocumentItem[]; metrics: StorageMetrics }> {
   const token = getStoredToken();
 
@@ -260,6 +294,67 @@ export async function generateShareUrl(params: ShareRequest): Promise<ShareRespo
   if (!response.ok) {
     const errorData = await response.json().catch(() => ({}));
     throw new Error(errorData.error || `Failed to create pre-signed URL: ${response.status}`);
+  }
+
+  return response.json();
+}
+
+export async function deleteDocument(documentId: string): Promise<{ message: string; documentId: string }> {
+  const token = getStoredToken();
+
+  if (!API_BASE_URL) {
+    await new Promise((res) => setTimeout(res, 500));
+    return {
+      message: 'Document deleted successfully (Simulated Mode)',
+      documentId,
+    };
+  }
+
+  const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+  if (token) headers['Authorization'] = `Bearer ${token}`;
+
+  const response = await fetch(`${API_BASE_URL}/documents/${encodeURIComponent(documentId)}`, {
+    method: 'DELETE',
+    headers,
+  });
+
+  if (!response.ok) {
+    const errorData = await response.json().catch(() => ({}));
+    throw new Error(errorData.error || `Delete failed (${response.status})`);
+  }
+
+  return response.json();
+}
+
+export async function getOpenUrl(documentId: string, download = false): Promise<OpenDocumentResponse> {
+  const token = getStoredToken();
+
+  if (!API_BASE_URL) {
+    await new Promise((res) => setTimeout(res, 400));
+    const demoText = `CloudDoc Vault demo preview for document ${documentId}`;
+    return {
+      url: `data:text/plain;base64,${btoa(demoText)}`,
+      fileName: 'demo-preview.txt',
+      contentType: 'text/plain',
+      expiresInSeconds: 900,
+    };
+  }
+
+  const headers: Record<string, string> = {};
+  if (token) headers['Authorization'] = `Bearer ${token}`;
+
+  const response = await fetch(
+    `${API_BASE_URL}/documents/${encodeURIComponent(documentId)}/download${download ? '?download=1' : ''}`,
+    {
+      method: 'GET',
+      headers,
+      cache: 'no-store',
+    }
+  );
+
+  if (!response.ok) {
+    const errorData = await response.json().catch(() => ({}));
+    throw new Error(errorData.error || `Failed to open document (${response.status})`);
   }
 
   return response.json();

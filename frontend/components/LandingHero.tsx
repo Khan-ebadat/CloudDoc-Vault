@@ -158,7 +158,7 @@ export const LandingHero: React.FC<LandingHeroProps> = ({ onAuthSuccess }) => {
                       required
                       value={fullName}
                       onChange={(e) => setFullName(e.target.value)}
-                      placeholder="Marcus Vance"
+                      placeholder="Full Name"
                       className="w-full pl-9 pr-3 py-2 rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-300 dark:border-slate-700 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-cyan-500"
                     />
                   </div>
@@ -222,7 +222,7 @@ export const LandingHero: React.FC<LandingHeroProps> = ({ onAuthSuccess }) => {
             </form>
 
             {/* Instant 1-Click Demo Logins */}
-            <div className="mt-5 pt-4 border-t border-slate-200 dark:border-slate-800 text-center">
+            {/* <div className="mt-5 pt-4 border-t border-slate-200 dark:border-slate-800 text-center">
               <p className="text-[11px] font-semibold text-slate-500 dark:text-slate-400 mb-2.5">
                 Instant 1-Click Demo Logins:
               </p>
@@ -244,7 +244,7 @@ export const LandingHero: React.FC<LandingHeroProps> = ({ onAuthSuccess }) => {
                   <p className="text-[10px] text-indigo-600 dark:text-indigo-400">SecOps Lead</p>
                 </button>
               </div>
-            </div>
+            </div> */}
           </div>
         </div>
       </div>

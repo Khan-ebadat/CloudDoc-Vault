@@ -1,10 +1,20 @@
 export type PermissionType = 'VIEW' | 'EDIT' | 'WRITE';
 
+export type NotificationStatus = 'CONFIRMED' | 'PENDING' | 'DISABLED' | 'UNKNOWN' | 'ERROR';
+
+export interface EmailNotificationState {
+  email: string;
+  status: NotificationStatus;
+  subscriptionArn?: string;
+  error?: string;
+}
+
 export interface UserSession {
   userId: string;
   email: string;
   fullName: string;
   role: string;
+  notifications?: EmailNotificationState;
 }
 
 export interface AuthResponse {
@@ -18,6 +28,7 @@ export interface SharedUserPermission {
   email?: string;
   permission: PermissionType;
   sharedBy?: string;
+  sharedByName?: string;
   sharedAt: string;
 }
 
@@ -72,4 +83,20 @@ export interface ShareResponse {
   expiresInSeconds: number;
   expiresAt: string;
   preSignedUrl: string;
+}
+
+export interface OpenDocumentResponse {
+  url: string;
+  fileName: string;
+  contentType: string;
+  expiresInSeconds: number;
+}
+
+export interface ShareNotification {
+  key: string;
+  document: DocumentItem;
+  permission: PermissionType;
+  sharedBy?: string;
+  sharedByName?: string;
+  sharedAt: string;
 }

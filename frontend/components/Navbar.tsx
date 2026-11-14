@@ -2,17 +2,27 @@
 
 import React, { useEffect, useState } from 'react';
 import { ShieldCheck, Cloud, Database, Bell, Plus, Sun, Moon, LogOut, User, Lock } from 'lucide-react';
-import { UserSession } from '../lib/types';
+import { DocumentItem, UserSession } from '../lib/types';
 import { clearSession } from '../lib/api';
+import { NotificationBell } from './NotificationBell';
 
 interface NavbarProps {
   user: UserSession | null;
+  documents: DocumentItem[];
   onOpenUpload: () => void;
   onOpenAuth: () => void;
   onLogout: () => void;
+  onOpenDocument: (doc: DocumentItem) => void;
 }
 
-export const Navbar: React.FC<NavbarProps> = ({ user, onOpenUpload, onOpenAuth, onLogout }) => {
+export const Navbar: React.FC<NavbarProps> = ({
+  user,
+  documents,
+  onOpenUpload,
+  onOpenAuth,
+  onLogout,
+  onOpenDocument,
+}) => {
   const [isDarkMode, setIsDarkMode] = useState<boolean>(true);
 
   // Initialize theme from localStorage or system preference
@@ -85,6 +95,15 @@ export const Navbar: React.FC<NavbarProps> = ({ user, onOpenUpload, onOpenAuth, 
 
         {/* User Controls & Theme Toggle */}
         <div className="flex items-center space-x-2 sm:space-x-3">
+          {/* Share Notification Bell */}
+          {user && (
+            <NotificationBell
+              documents={documents}
+              currentUser={user}
+              onOpenDocument={onOpenDocument}
+            />
+          )}
+
           {/* Dark / Light Mode Toggle Button */}
           <button
             id="theme-toggle-btn"

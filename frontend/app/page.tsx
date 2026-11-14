@@ -8,9 +8,11 @@ import { DocumentTable } from '../components/DocumentTable';
 import { UploadModal } from '../components/UploadModal';
 import { ShareModal } from '../components/ShareModal';
 import { AuthModal } from '../components/AuthModal';
+import { DeleteConfirmModal } from '../components/DeleteConfirmModal';
+import { NotificationBanner } from '../components/NotificationBanner';
 import { DocumentItem, StorageMetrics, UserSession } from '../lib/types';
-import { fetchDocuments, getStoredUser, clearSession } from '../lib/api';
-import { RefreshCw, Loader2 } from 'lucide-react';
+import { fetchDocuments, getStoredUser, clearSession, deleteDocument, getOpenUrl, refreshNotificationStatus } from '../lib/api';
+import { RefreshCw, Loader2, CheckCircle2, AlertCircle } from 'lucide-react';
 
 export default function AppRootPage() {
   const [currentUser, setCurrentUser] = useState<UserSession | null>(null);
@@ -22,10 +24,17 @@ export default function AppRootPage() {
   const [authModalOpen, setAuthModalOpen] = useState<boolean>(false);
   const [shareModalDoc, setShareModalDoc] = useState<DocumentItem | null>(null);
   const [lastRefreshed, setLastRefreshed] = useState<string>('');
+  const [openingDocId, setOpeningDocId] = useState<string | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<DocumentItem | null>(null);
+  const [isDeleting, setIsDeleting] = useState<boolean>(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
+  const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
+  const [notificationsDismissed, setNotificationsDismissed] = useState<boolean>(false);
+  const [isRefreshingNotifications, setIsRefreshingNotifications] = useState<boolean>(false);
 
-  const loadVaultData = useCallback(async () => {
+  const loadVaultData = useCallback(async (silent = false) => {
     try {
-      setLoading(true);
+      if (!silent) setLoading(true);
       const data = await fetchDocuments();
       setDocuments(data.documents);
       setMetrics(data.metrics);
@@ -33,7 +42,7 @@ export default function AppRootPage() {
     } catch (err) {
       console.error('Error fetching vault data:', err);
     } finally {
-      setLoading(false);
+      if (!silent) setLoading(false);
     }
   }, []);
 
@@ -50,6 +59,33 @@ export default function AppRootPage() {
     setIsAuthLoading(false);
   }, [loadVaultData]);
 
+  // 2. Silent polling so new share notifications appear without manual refresh
+  useEffect(() => {
+    if (!currentUser) return;
+    const interval = window.setInterval(() => {
+      loadVaultData(true);
+    }, 60000);
+    return () => window.clearInterval(interval);
+  }, [currentUser, loadVaultData]);
+
+  // 3. Sessions created before per-user email alerts existed have no
+  //    notification state yet - fetch it once so the banner can appear.
+  useEffect(() => {
+    if (!currentUser || currentUser.notifications) return;
+
+    let cancelled = false;
+    refreshNotificationStatus().then((state) => {
+      if (!cancelled && state) {
+        const storedUser = getStoredUser();
+        if (storedUser) setCurrentUser(storedUser);
+      }
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [currentUser]);
+
   // Handle Logout: Clears storage & session, returns to Home/Landing page immediately
   const handleLogout = () => {
     clearSession();
@@ -63,6 +99,80 @@ export default function AppRootPage() {
     setCurrentUser(user);
     loadVaultData();
   };
+
+  const showToast = useCallback((message: string, type: 'success' | 'error') => {
+    setToast({ message, type });
+    window.setTimeout(() => setToast(null), 4000);
+  }, []);
+
+  // Re-check whether the user clicked the AWS subscription confirmation link
+  const handleRefreshNotifications = useCallback(async () => {
+    setIsRefreshingNotifications(true);
+    try {
+      const state = await refreshNotificationStatus();
+      const storedUser = getStoredUser();
+      if (storedUser) setCurrentUser(storedUser);
+
+      if (state?.status === 'CONFIRMED') {
+        showToast(`Email notifications are active for ${state.email}`, 'success');
+      } else if (state) {
+        showToast('Not confirmed yet - open the AWS email and click the link', 'error');
+      } else {
+        showToast('Could not read notification status', 'error');
+      }
+    } finally {
+      setIsRefreshingNotifications(false);
+    }
+  }, [showToast]);
+
+  // Generate a short-lived pre-signed URL and open it in a new browser tab
+  const handleOpenDocument = useCallback(async (doc: DocumentItem) => {
+    // Open the tab synchronously so browsers don't block it while we fetch
+    const newTab = window.open('', '_blank');
+    if (newTab) {
+      newTab.document.write(
+        '<p style="font-family: system-ui, sans-serif; padding: 24px;">Generating secure pre-signed URL…</p>'
+      );
+    }
+
+    setOpeningDocId(doc.DocumentID);
+    try {
+      const result = await getOpenUrl(doc.DocumentID);
+      if (newTab) {
+        newTab.location.href = result.url;
+      } else {
+        window.open(result.url, '_blank', 'noopener,noreferrer');
+      }
+    } catch (err: any) {
+      if (newTab) newTab.close();
+      showToast(err.message || 'Could not open document', 'error');
+    } finally {
+      setOpeningDocId(null);
+    }
+  }, [showToast]);
+
+  const handleDeleteRequest = useCallback((doc: DocumentItem) => {
+    setDeleteError(null);
+    setDeleteTarget(doc);
+  }, []);
+
+  const handleDeleteConfirm = useCallback(async () => {
+    if (!deleteTarget) return;
+    const target = deleteTarget;
+
+    setIsDeleting(true);
+    setDeleteError(null);
+    try {
+      await deleteDocument(target.DocumentID);
+      setDeleteTarget(null);
+      showToast(`"${target.FileName}" deleted from S3 and DynamoDB`, 'success');
+      await loadVaultData();
+    } catch (err: any) {
+      setDeleteError(err.message || 'Delete failed');
+    } finally {
+      setIsDeleting(false);
+    }
+  }, [deleteTarget, loadVaultData, showToast]);
 
   // Initial loading splash to avoid UI flicker
   if (isAuthLoading) {
@@ -78,6 +188,8 @@ export default function AppRootPage() {
       {/* Top Application Navbar with Dark/Light Toggle */}
       <Navbar
         user={currentUser}
+        documents={documents}
+        onOpenDocument={handleOpenDocument}
         onOpenUpload={() => {
           if (!currentUser) {
             setAuthModalOpen(true);
@@ -101,6 +213,16 @@ export default function AppRootPage() {
           /* 2. AUTHENTICATED: SECURITY VAULT DASHBOARD               */
           /* ======================================================== */
           <div className="py-8">
+            {/* Email notification confirmation banner */}
+            {currentUser.notifications && !notificationsDismissed && (
+              <NotificationBanner
+                state={currentUser.notifications}
+                isRefreshing={isRefreshingNotifications}
+                onRefresh={handleRefreshNotifications}
+                onDismiss={() => setNotificationsDismissed(true)}
+              />
+            )}
+
             {/* User Identity Welcome & Sync Status */}
             <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 mb-6">
               <div>
@@ -124,7 +246,7 @@ export default function AppRootPage() {
                   Synced: {lastRefreshed || 'Connecting...'}
                 </span>
                 <button
-                  onClick={loadVaultData}
+                  onClick={() => loadVaultData()}
                   disabled={loading}
                   className="flex items-center space-x-1.5 px-3 py-1.5 rounded-lg bg-white dark:bg-slate-900 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300 border border-slate-300 dark:border-slate-700/80 text-xs font-semibold transition-all shadow-sm"
                 >
@@ -143,7 +265,10 @@ export default function AppRootPage() {
               currentUser={currentUser}
               loading={loading}
               onOpenShare={(doc) => setShareModalDoc(doc)}
+              onOpenDocument={handleOpenDocument}
+              onDeleteDocument={handleDeleteRequest}
               onRefresh={loadVaultData}
+              openingDocId={openingDocId}
             />
           </div>
         )}
@@ -188,6 +313,41 @@ export default function AppRootPage() {
         onClose={() => setAuthModalOpen(false)}
         onAuthSuccess={handleAuthSuccess}
       />
+
+      {/* Delete Confirmation Modal */}
+      {currentUser && (
+        <DeleteConfirmModal
+          document={deleteTarget}
+          isOpen={Boolean(deleteTarget)}
+          isDeleting={isDeleting}
+          errorMsg={deleteError}
+          onClose={() => {
+            if (!isDeleting) {
+              setDeleteTarget(null);
+              setDeleteError(null);
+            }
+          }}
+          onConfirm={handleDeleteConfirm}
+        />
+      )}
+
+      {/* Toast Feedback */}
+      {toast && (
+        <div
+          className={`fixed bottom-5 right-5 z-[60] flex items-center space-x-2 px-4 py-3 rounded-xl shadow-2xl border text-xs font-semibold max-w-sm ${
+            toast.type === 'success'
+              ? 'bg-emerald-50 dark:bg-emerald-950/90 border-emerald-200 dark:border-emerald-800 text-emerald-700 dark:text-emerald-300'
+              : 'bg-rose-50 dark:bg-rose-950/90 border-rose-200 dark:border-rose-800 text-rose-700 dark:text-rose-300'
+          }`}
+        >
+          {toast.type === 'success' ? (
+            <CheckCircle2 className="w-4 h-4 flex-shrink-0" />
+          ) : (
+            <AlertCircle className="w-4 h-4 flex-shrink-0" />
+          )}
+          <span>{toast.message}</span>
+        </div>
+      )}
     </div>
   );
 }

@@ -14,7 +14,10 @@ import {
   Lock, 
   Copy, 
   Users, 
-  UserCheck 
+  UserCheck,
+  ExternalLink,
+  Trash2,
+  Loader2
 } from 'lucide-react';
 
 interface DocumentTableProps {
@@ -22,7 +25,10 @@ interface DocumentTableProps {
   currentUser: UserSession | null;
   loading: boolean;
   onOpenShare: (doc: DocumentItem) => void;
+  onOpenDocument: (doc: DocumentItem) => void;
+  onDeleteDocument: (doc: DocumentItem) => void;
   onRefresh: () => void;
+  openingDocId?: string | null;
 }
 
 export const DocumentTable: React.FC<DocumentTableProps> = ({
@@ -30,7 +36,10 @@ export const DocumentTable: React.FC<DocumentTableProps> = ({
   currentUser,
   loading,
   onOpenShare,
+  onOpenDocument,
+  onDeleteDocument,
   onRefresh,
+  openingDocId = null,
 }) => {
   const [searchTerm, setSearchTerm] = useState('');
   const [filterType, setFilterType] = useState<'ALL' | 'MINE' | 'SHARED'>('ALL');
@@ -248,13 +257,39 @@ export const DocumentTable: React.FC<DocumentTableProps> = ({
                     </td>
 
                     <td className="px-6 py-4 whitespace-nowrap text-right">
-                      <button
-                        onClick={() => onOpenShare(doc)}
-                        className="inline-flex items-center space-x-1.5 px-3 py-1.5 rounded-lg bg-indigo-50 hover:bg-indigo-100 dark:bg-indigo-500/10 dark:hover:bg-indigo-500/20 text-indigo-600 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-500/30 text-xs font-semibold transition-all hover:scale-105 active:scale-95"
-                      >
-                        <Share2 className="w-3.5 h-3.5" />
-                        <span>Share Link</span>
-                      </button>
+                      <div className="flex items-center justify-end space-x-1.5">
+                        <button
+                          onClick={() => onOpenDocument(doc)}
+                          disabled={openingDocId === doc.DocumentID}
+                          className="inline-flex items-center space-x-1.5 px-3 py-1.5 rounded-lg bg-cyan-50 hover:bg-cyan-100 dark:bg-cyan-500/10 dark:hover:bg-cyan-500/20 text-cyan-600 dark:text-cyan-300 border border-cyan-200 dark:border-cyan-500/30 text-xs font-semibold transition-all hover:scale-105 active:scale-95 disabled:opacity-50 disabled:cursor-wait"
+                          title="Open document in a new tab"
+                        >
+                          {openingDocId === doc.DocumentID ? (
+                            <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                          ) : (
+                            <ExternalLink className="w-3.5 h-3.5" />
+                          )}
+                          <span>Open</span>
+                        </button>
+
+                        <button
+                          onClick={() => onOpenShare(doc)}
+                          className="inline-flex items-center space-x-1.5 px-3 py-1.5 rounded-lg bg-indigo-50 hover:bg-indigo-100 dark:bg-indigo-500/10 dark:hover:bg-indigo-500/20 text-indigo-600 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-500/30 text-xs font-semibold transition-all hover:scale-105 active:scale-95"
+                        >
+                          <Share2 className="w-3.5 h-3.5" />
+                          <span className="hidden sm:inline">Share Link</span>
+                        </button>
+
+                        {isOwner && (
+                          <button
+                            onClick={() => onDeleteDocument(doc)}
+                            className="inline-flex items-center justify-center p-1.5 rounded-lg bg-rose-50 hover:bg-rose-100 dark:bg-rose-500/10 dark:hover:bg-rose-500/20 text-rose-600 dark:text-rose-300 border border-rose-200 dark:border-rose-500/30 transition-all hover:scale-105 active:scale-95"
+                            title="Delete document permanently"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        )}
+                      </div>
                     </td>
                   </tr>
                 );
