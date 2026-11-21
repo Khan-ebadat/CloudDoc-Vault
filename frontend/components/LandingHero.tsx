@@ -16,7 +16,9 @@ import {
   Database, 
   Bell, 
   Key, 
-  Sparkles 
+  Sparkles,
+  Eye,
+  EyeOff
 } from 'lucide-react';
 
 interface LandingHeroProps {
@@ -27,6 +29,7 @@ export const LandingHero: React.FC<LandingHeroProps> = ({ onAuthSuccess }) => {
   const [authMode, setAuthMode] = useState<'LOGIN' | 'SIGNUP'>('LOGIN');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
   const [fullName, setFullName] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -169,14 +172,29 @@ export const LandingHero: React.FC<LandingHeroProps> = ({ onAuthSuccess }) => {
                 <div className="relative">
                   <Lock className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
                   <input
-                    type="password"
+                    type={showPassword ? 'text' : 'password'}
                     required
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
                     placeholder="••••••••••••"
-                    className="w-full pl-9 pr-3 py-2 rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-300 dark:border-slate-700 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-cyan-500"
+                    className="w-full pl-9 pr-10 py-2 rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-300 dark:border-slate-700 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-cyan-500"
                   />
+                  <button
+                    type="button"
+                    onClick={() => setShowPassword((v) => !v)}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200"
+                    aria-label={showPassword ? 'Hide password' : 'Show password'}
+                  >
+                    {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                  </button>
                 </div>
+                {authMode === 'LOGIN' && (
+                  <div className="mt-1.5 text-right">
+                    <a href="/forgot-password" className="text-xs text-cyan-500 font-semibold hover:underline">
+                      Forgot password?
+                    </a>
+                  </div>
+                )}
               </div>
 
               {errorMessage && (

@@ -1,13 +1,39 @@
-import { GetObjectCommand, PutObjectCommand } from '@aws-sdk/client-s3';
-import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
-import { GetCommand, UpdateCommand } from '@aws-sdk/lib-dynamodb';
-import { s3Client, docClient, CORS_HEADERS } from '../lib/awsClients.js';
+import { GetCommand, UpdateCommand, PutCommand } from '@aws-sdk/lib-dynamodb';
+import { randomBytes } from 'crypto';
+import { docClient, CORS_HEADERS } from '../lib/awsClients.js';
 import { getAuthenticatedUser } from '../lib/authUtils.js';
 import { publishToRecipient } from '../lib/notifications.js';
 
-const BUCKET_NAME = process.env.DOCUMENTS_BUCKET_NAME || 'clouddoc-vault-documents';
 const TABLE_NAME = process.env.DOCUMENTS_TABLE_NAME || 'DocumentsMetadata';
 const USERS_TABLE = process.env.USERS_TABLE_NAME || 'ClouddocUsers';
+const SHARE_LINKS_TABLE = process.env.SHARE_LINKS_TABLE_NAME || 'ShareLinks';
+const FRONTEND_BASE_URL = (process.env.FRONTEND_BASE_URL || 'http://localhost:3000').replace(/\/$/, '');
+
+function generateShareCode(length = 10) {
+  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789';
+  const bytes = randomBytes(length);
+  let out = '';
+  for (let i = 0; i < length; i++) out += chars[bytes[i] % chars.length];
+  return out;
+}
+
+async function createShortShareCode(item, maxAttempts = 5) {
+  for (let attempt = 0; attempt < maxAttempts; attempt++) {
+    const shareCode = generateShareCode(10);
+    try {
+      await docClient.send(new PutCommand({
+        TableName: SHARE_LINKS_TABLE,
+        Item: { ShareCode: shareCode, ...item },
+        ConditionExpression: 'attribute_not_exists(ShareCode)',
+      }));
+      return shareCode;
+    } catch (err) {
+      if (err?.name === 'ConditionalCheckFailedException') continue;
+      throw err;
+    }
+  }
+  throw new Error('Failed to generate a unique short share link');
+}
 
 /**
  * Lambda handler for generating secure S3 Pre-Signed URLs (GET/PUT)
@@ -84,41 +110,18 @@ export const handler = async (event) => {
       }
     }
 
-    const s3Key = doc.S3Key;
     const sanitizedExpiry = Math.min(Math.max(parseInt(expiresIn, 10) || 3600, 60), 604800);
     const normalizedPerm = permission.toUpperCase();
 
-    let preSignedUrl = '';
-    let actionType = '';
-
-    // 3. Generate Pre-Signed URL with SigV4
-    if (normalizedPerm === 'VIEW') {
-      actionType = 'GET';
-      const originalContentType = doc.ContentType || 'application/octet-stream';
-      const isTextual = originalContentType.startsWith('text/') ||
-        ['application/csv', 'application/json', 'application/xml', 'application/javascript'].includes(originalContentType);
-      const getCmd = new GetObjectCommand({
-        Bucket: BUCKET_NAME,
-        Key: s3Key,
-        ResponseContentType: isTextual ? 'text/plain; charset=utf-8' : originalContentType,
-        ResponseContentDisposition: `inline; filename="${doc.FileName}"`,
-      });
-      preSignedUrl = await getSignedUrl(s3Client, getCmd, { expiresIn: sanitizedExpiry });
-    } else if (normalizedPerm === 'WRITE' || normalizedPerm === 'EDIT') {
-      actionType = 'PUT';
-      const putCmd = new PutObjectCommand({
-        Bucket: BUCKET_NAME,
-        Key: s3Key,
-        ContentType: doc.ContentType || 'application/octet-stream',
-      });
-      preSignedUrl = await getSignedUrl(s3Client, putCmd, { expiresIn: sanitizedExpiry });
-    } else {
+    // View-only sharing: keep it simple and safe.
+    if (normalizedPerm !== 'VIEW') {
       return {
         statusCode: 400,
         headers: CORS_HEADERS,
-        body: JSON.stringify({ error: `Invalid permission: ${permission}. Must be VIEW, EDIT, or WRITE.` }),
+        body: JSON.stringify({ error: 'Only VIEW sharing is supported.' }),
       };
     }
+    const actionType = 'GET';
 
     // 4. Update SharedWith array in DynamoDB
     const existingSharedWith = Array.isArray(doc.SharedWith) ? doc.SharedWith : [];
@@ -156,21 +159,36 @@ export const handler = async (event) => {
       });
     }
 
+    const nowIso = new Date().toISOString();
     await docClient.send(new UpdateCommand({
       TableName: TABLE_NAME,
       Key: { DocumentID: documentId },
       UpdateExpression: 'SET SharedStatus = :sharedStatus, LastSharedAt = :sharedAt, SharedWith = :sharedWith',
       ExpressionAttributeValues: {
         ':sharedStatus': 'SHARED',
-        ':sharedAt': new Date().toISOString(),
+        ':sharedAt': nowIso,
         ':sharedWith': updatedSharedWith,
       },
     }));
 
-    // 5. Email the recipient. SNS routes this to targetEmail only, via the
-    //    subscription filter policy on the `recipient` message attribute.
+    const expiresAtEpoch = Math.floor(Date.now() / 1000) + sanitizedExpiry;
+    const expiresAt = new Date(expiresAtEpoch * 1000).toISOString();
+    const shareCode = await createShortShareCode({
+      DocumentID: documentId,
+      OwnerID: doc.OwnerID,
+      FileName: doc.FileName,
+      Permission: normalizedPerm,
+      CreatedBy: callerId,
+      CreatedByEmail: authUser.email || '',
+      TargetUserId: rawTarget || '',
+      CreatedAt: nowIso,
+      ExpiresAt: expiresAt,
+      ExpiresAtEpoch: expiresAtEpoch,
+    });
+    const shareUrl = `${FRONTEND_BASE_URL}/s/${shareCode}`;
+
+    // 5. Email the recipient. SNS routes this to targetEmail only.
     if (targetEmail) {
-      const sharedAt = new Date().toISOString();
       const notified = await publishToRecipient({
         recipientEmail: targetEmail,
         event: 'DOCUMENT_SHARED',
@@ -182,9 +200,10 @@ export const handler = async (event) => {
           sharedByName: authUser.fullName || 'Vault Owner',
           sharedByEmail: authUser.email || '',
           expiresInSeconds: sanitizedExpiry,
-          expiresAt: new Date(Date.now() + sanitizedExpiry * 1000).toISOString(),
-          sharedAt,
-          note: 'Sign in to CloudDoc Vault to open this document. For security, access links are not included in email.',
+          expiresAt,
+          sharedAt: nowIso,
+          shareUrl,
+          note: 'Use the share link to open this document. The link will expire at the time shown above.',
         },
       });
       console.log(`[SNS] Share notification for ${targetEmail}: ${notified ? 'published' : 'skipped'}`);
@@ -194,15 +213,15 @@ export const handler = async (event) => {
       statusCode: 200,
       headers: CORS_HEADERS,
       body: JSON.stringify({
-        message: 'Pre-signed URL generated successfully',
+        message: 'Short share link generated successfully',
         documentId,
         fileName: doc.FileName,
         permission: normalizedPerm,
         targetUserId: targetUserId || 'Public/Tokenized',
         httpMethod: actionType,
         expiresInSeconds: sanitizedExpiry,
-        expiresAt: new Date(Date.now() + sanitizedExpiry * 1000).toISOString(),
-        preSignedUrl,
+        expiresAt,
+        shareUrl,
       }),
     };
   } catch (error) {

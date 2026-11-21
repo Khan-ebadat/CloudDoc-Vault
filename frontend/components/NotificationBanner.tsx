@@ -73,12 +73,12 @@ export const NotificationBanner: React.FC<NotificationBannerProps> = ({
         </p>
       </div>
 
-      <div className="flex items-center space-x-2 flex-shrink-0">
+      <div className="flex items-center space-x-2 flex-shrink-0 w-full sm:w-auto">
         <button
           type="button"
           onClick={onRefresh}
           disabled={isRefreshing}
-          className="inline-flex items-center space-x-1.5 px-3 py-1.5 rounded-lg bg-white dark:bg-slate-900 border border-amber-300 dark:border-amber-700 text-[11px] font-semibold text-amber-800 dark:text-amber-200 hover:bg-amber-100 dark:hover:bg-amber-950 disabled:opacity-60 transition-colors"
+          className="flex-1 sm:flex-none justify-center inline-flex items-center space-x-1.5 px-3 py-1.5 rounded-lg bg-white dark:bg-slate-900 border border-amber-300 dark:border-amber-700 text-[11px] font-semibold text-amber-800 dark:text-amber-200 hover:bg-amber-100 dark:hover:bg-amber-950 disabled:opacity-60 transition-colors"
         >
           {isRefreshing ? (
             <Loader2 className="w-3.5 h-3.5 animate-spin" />

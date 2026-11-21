@@ -53,15 +53,17 @@ export const ShareModal: React.FC<ShareModalProps> = ({
       setShareData(res);
       onShareGenerated();
     } catch (err: any) {
-      setErrorMsg(err.message || 'Failed to generate pre-signed URL');
+      setErrorMsg(err.message || 'Failed to generate share link');
     } finally {
       setIsGenerating(false);
     }
   };
 
+  const shareLink = shareData?.shareUrl || shareData?.preSignedUrl || '';
+
   const handleCopyLink = () => {
-    if (!shareData?.preSignedUrl) return;
-    navigator.clipboard.writeText(shareData.preSignedUrl);
+    if (!shareLink) return;
+    navigator.clipboard.writeText(shareLink);
     setCopied(true);
     setTimeout(() => setCopied(false), 2500);
   };
@@ -84,10 +86,10 @@ export const ShareModal: React.FC<ShareModalProps> = ({
             </div>
             <div>
               <h3 className="font-bold text-slate-900 dark:text-white text-base">
-                Generate S3 Pre-Signed URL
+                Create Short Share Link
               </h3>
               <p className="text-xs text-slate-500 dark:text-slate-400">
-                Target User Permission Authorization in 'DocumentsMetadata'
+                Generates a short link that opens a secure time-limited document view
               </p>
             </div>
           </div>
@@ -178,45 +180,45 @@ export const ShareModal: React.FC<ShareModalProps> = ({
           </div>
         )}
 
-        {/* Generated Signed URL Section */}
+        {/* Generated Short Share Link Section */}
         {shareData ? (
           <div className="mt-4 p-4 rounded-xl bg-slate-100 dark:bg-slate-900 border border-indigo-300 dark:border-indigo-700/60">
             <div className="flex items-center justify-between mb-2">
               <span className="text-[11px] font-bold text-indigo-600 dark:text-indigo-400 uppercase tracking-wider flex items-center space-x-1">
                 <ShieldCheck className="w-3.5 h-3.5" />
-                <span>Active Signed Link ({shareData.httpMethod})</span>
+                <span>Active Share Link</span>
               </span>
               <span className="text-[10px] text-slate-500">
                 Expires: {new Date(shareData.expiresAt).toLocaleTimeString()}
               </span>
             </div>
 
-            <div className="relative flex items-center">
+            <div className="flex flex-col sm:flex-row sm:items-center gap-2">
               <input
                 type="text"
                 readOnly
-                value={shareData.preSignedUrl}
-                className="w-full py-2 pl-3 pr-20 bg-white dark:bg-slate-950 text-slate-800 dark:text-slate-300 font-mono text-xs rounded-lg border border-slate-300 dark:border-slate-800 select-all focus:outline-none"
+                value={shareLink}
+                className="w-full py-2 px-3 bg-white dark:bg-slate-950 text-slate-800 dark:text-slate-300 font-mono text-xs rounded-lg border border-slate-300 dark:border-slate-800 select-all focus:outline-none"
               />
               <button
                 type="button"
                 onClick={handleCopyLink}
-                className="absolute right-1.5 px-3 py-1 rounded-md bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold flex items-center space-x-1 transition-all"
+                className="w-full sm:w-auto justify-center px-3 py-2 rounded-md bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold flex items-center space-x-1 transition-all"
               >
                 {copied ? <Check className="w-3.5 h-3.5 text-emerald-300" /> : <Copy className="w-3.5 h-3.5" />}
                 <span>{copied ? 'Copied!' : 'Copy'}</span>
               </button>
             </div>
 
-            {shareData.permission === 'VIEW' && (
+            {shareLink && (
               <div className="mt-2 text-right">
                 <a
-                  href={shareData.preSignedUrl}
+                  href={shareLink}
                   target="_blank"
                   rel="noopener noreferrer"
                   className="inline-flex items-center space-x-1 text-xs text-cyan-600 dark:text-cyan-400 hover:underline"
                 >
-                  <span>Open Signed Preview</span>
+                  <span>Open Share Link</span>
                   <ExternalLink className="w-3 h-3" />
                 </a>
               </div>
@@ -237,7 +239,7 @@ export const ShareModal: React.FC<ShareModalProps> = ({
             ) : (
               <>
                 <Key className="w-4 h-4" />
-                <span>Generate S3 Pre-Signed URL</span>
+                <span>Create Short Share Link</span>
               </>
             )}
           </button>

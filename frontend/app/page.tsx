@@ -278,11 +278,11 @@ export default function AppRootPage() {
       <footer className="border-t border-slate-200 dark:border-slate-800/60 py-6 px-6 glass-panel mt-12 text-center text-xs text-slate-500 transition-colors">
         <div className="max-w-7xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-2">
           <p>© 2026 CloudDoc Vault Inc. Zero-Trust Storage Architecture.</p>
-          <div className="flex items-center space-x-3 text-[11px] text-slate-400">
+          <div className="flex flex-wrap items-center justify-center gap-x-3 gap-y-1 text-[11px] text-slate-400">
             <span>DynamoDB 'ClouddocUsers'</span>
-            <span>•</span>
+            <span className="hidden sm:inline">•</span>
             <span>'DocumentsMetadata'</span>
-            <span>•</span>
+            <span className="hidden sm:inline">•</span>
             <span>Private S3 User Prefixes</span>
           </div>
         </div>

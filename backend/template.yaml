@@ -7,6 +7,10 @@ Parameters:
     Type: String
     Default: ''
     Description: Email address that receives CloudDoc Vault upload alerts. Leave empty to skip.
+  FrontendBaseUrl:
+    Type: String
+    Default: 'http://localhost:3000'
+    Description: Base URL of the frontend app, used for password reset links.
 
 Conditions:
   HasNotificationEmail: !Not [!Equals [!Ref NotificationEmail, '']]
@@ -23,8 +27,10 @@ Globals:
         USERS_TABLE_NAME: !Ref UsersTable
         DOCUMENTS_TABLE_NAME: !Ref DocumentsMetadataTable
         DOCUMENTS_BUCKET_NAME: !Ref DocumentsBucket
+        SHARE_LINKS_TABLE_NAME: !Ref ShareLinksTable
         SNS_TOPIC_ARN: !Ref DocumentEventsTopic
         JWT_SECRET: !Sub "vault_secret_${AWS::AccountId}"
+        FRONTEND_BASE_URL: !Ref FrontendBaseUrl
 
 Resources:
   # 1. Private Amazon S3 Bucket with Block Public Access & CORS
@@ -96,6 +102,24 @@ Resources:
       PointInTimeRecoverySpecification:
         PointInTimeRecoveryEnabled: true
 
+  # 3b. DynamoDB Table: Short Share Links
+  ShareLinksTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: ShareLinks
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: ShareCode
+          AttributeType: S
+      KeySchema:
+        - AttributeName: ShareCode
+          KeyType: HASH
+      TimeToLiveSpecification:
+        AttributeName: ExpiresAtEpoch
+        Enabled: true
+      PointInTimeRecoverySpecification:
+        PointInTimeRecoveryEnabled: true
+
   # 4. Amazon SNS Topic for Events
   DocumentEventsTopic:
     Type: AWS::SNS::Topic
@@ -140,6 +164,8 @@ Resources:
       Policies:
         - DynamoDBCrudPolicy:
             TableName: !Ref UsersTable
+        - SNSPublishMessagePolicy:
+            TopicName: !GetAtt DocumentEventsTopic.TopicName
         - Statement:
             - Effect: Allow
               Action:
@@ -168,6 +194,18 @@ Resources:
             RestApiId: !Ref VaultApiGateway
             Path: /auth/notifications
             Method: GET
+        ForgotPasswordApi:
+          Type: Api
+          Properties:
+            RestApiId: !Ref VaultApiGateway
+            Path: /auth/forgot-password
+            Method: POST
+        ResetPasswordApi:
+          Type: Api
+          Properties:
+            RestApiId: !Ref VaultApiGateway
+            Path: /auth/reset-password
+            Method: POST
 
   UploadDocumentFunction:
     Type: AWS::Serverless::Function
@@ -215,6 +253,8 @@ Resources:
             BucketName: !Ref DocumentsBucket
         - DynamoDBCrudPolicy:
             TableName: !Ref DocumentsMetadataTable
+        - DynamoDBCrudPolicy:
+            TableName: !Ref ShareLinksTable
         - DynamoDBReadPolicy:
             TableName: !Ref UsersTable
         - SNSPublishMessagePolicy:
@@ -226,6 +266,26 @@ Resources:
             RestApiId: !Ref VaultApiGateway
             Path: /documents/share
             Method: POST
+
+  ResolveShareFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: .
+      Handler: handlers/resolveShareHandler.handler
+      Policies:
+        - DynamoDBReadPolicy:
+            TableName: !Ref ShareLinksTable
+        - DynamoDBReadPolicy:
+            TableName: !Ref DocumentsMetadataTable
+        - S3ReadPolicy:
+            BucketName: !Ref DocumentsBucket
+      Events:
+        ResolveShareApi:
+          Type: Api
+          Properties:
+            RestApiId: !Ref VaultApiGateway
+            Path: /share/{code}
+            Method: GET
 
   OpenDocumentFunction:
     Type: AWS::Serverless::Function
@@ -273,6 +333,9 @@ Outputs:
   DocumentsTableName:
     Description: "DynamoDB Documents Metadata Table"
     Value: !Ref DocumentsMetadataTable
+  ShareLinksTableName:
+    Description: "DynamoDB Share Links Table"
+    Value: !Ref ShareLinksTable
   S3BucketName:
     Description: "Secure Documents S3 Bucket"
     Value: !Ref DocumentsBucket

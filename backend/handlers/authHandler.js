@@ -1,5 +1,5 @@
 import { GetCommand, PutCommand, UpdateCommand } from '@aws-sdk/lib-dynamodb';
-import { randomUUID } from 'crypto';
+import { randomUUID, randomBytes, createHash } from 'crypto';
 import { docClient, CORS_HEADERS } from '../lib/awsClients.js';
 import { hashPassword, verifyPassword, generateToken, getAuthenticatedUser } from '../lib/authUtils.js';
 import {
@@ -7,9 +7,16 @@ import {
   refreshSubscription,
   normalizeEmail,
   NotificationStatus,
+  publishToRecipient,
 } from '../lib/notifications.js';
 
 const USERS_TABLE = process.env.USERS_TABLE_NAME || 'ClouddocUsers';
+const FRONTEND_BASE_URL = (process.env.FRONTEND_BASE_URL || 'http://localhost:3000').replace(/\/$/, '');
+const RESET_TOKEN_TTL_SECONDS = 60 * 15; // 15 minutes
+
+function hashResetToken(token) {
+  return createHash('sha256').update(token).digest('hex');
+}
 
 /**
  * Store the per-user email notification state on the ClouddocUsers record so
@@ -128,6 +135,10 @@ export const handler = async (event) => {
       };
     }
 
+    const path = event.path || '';
+    const isForgotPassword = event.httpMethod === 'POST' && path.endsWith('/forgot-password');
+    const isResetPassword = event.httpMethod === 'POST' && path.endsWith('/reset-password');
+
     if (!event.body) {
       return {
         statusCode: 400,
@@ -137,7 +148,143 @@ export const handler = async (event) => {
     }
 
     const payload = typeof event.body === 'string' ? JSON.parse(event.body) : event.body;
-    const isSignup = event.path?.endsWith('/signup') || payload.action === 'signup';
+
+    // ==========================================
+    // 1. FORGOT PASSWORD FLOW
+    // ==========================================
+    if (isForgotPassword) {
+      const email = normalizeEmail(payload.email);
+      const genericMessage = 'If an account exists for this email, a password reset link has been sent.';
+
+      if (!email) {
+        return {
+          statusCode: 400,
+          headers: CORS_HEADERS,
+          body: JSON.stringify({ error: 'Email is required' }),
+        };
+      }
+
+      const userResult = await docClient.send(new GetCommand({
+        TableName: USERS_TABLE,
+        Key: { Email: email },
+      }));
+
+      if (!userResult.Item) {
+        return {
+          statusCode: 200,
+          headers: CORS_HEADERS,
+          body: JSON.stringify({ message: genericMessage }),
+        };
+      }
+
+      const user = userResult.Item;
+      const resetToken = randomBytes(32).toString('hex');
+      const resetTokenHash = hashResetToken(resetToken);
+      const resetExpiresAt = new Date(Date.now() + RESET_TOKEN_TTL_SECONDS * 1000).toISOString();
+
+      await docClient.send(new UpdateCommand({
+        TableName: USERS_TABLE,
+        Key: { Email: email },
+        UpdateExpression: 'SET ResetTokenHash = :hash, ResetTokenExpiresAt = :exp, ResetTokenRequestedAt = :now, UpdatedAt = :now',
+        ExpressionAttributeValues: {
+          ':hash': resetTokenHash,
+          ':exp': resetExpiresAt,
+          ':now': new Date().toISOString(),
+        },
+      }));
+
+      const resetUrl = `${FRONTEND_BASE_URL}/reset-password?token=${encodeURIComponent(resetToken)}&email=${encodeURIComponent(email)}`;
+
+      await publishToRecipient({
+        recipientEmail: email,
+        event: 'PASSWORD_RESET',
+        subject: '[CloudDoc Vault] Reset your password',
+        payload: {
+          resetUrl,
+          expiresAt: resetExpiresAt,
+          expiresInMinutes: Math.floor(RESET_TOKEN_TTL_SECONDS / 60),
+          note: 'If you did not request this, you can ignore this message. The link expires in 15 minutes.',
+        },
+      });
+
+      return {
+        statusCode: 200,
+        headers: CORS_HEADERS,
+        body: JSON.stringify({ message: genericMessage }),
+      };
+    }
+
+    // ==========================================
+    // 2. RESET PASSWORD FLOW
+    // ==========================================
+    if (isResetPassword) {
+      const email = normalizeEmail(payload.email);
+      const token = String(payload.token || '').trim();
+      const newPassword = String(payload.newPassword || '');
+
+      if (!email || !token || !newPassword) {
+        return {
+          statusCode: 400,
+          headers: CORS_HEADERS,
+          body: JSON.stringify({ error: 'Email, token, and new password are required' }),
+        };
+      }
+
+      if (newPassword.length < 8) {
+        return {
+          statusCode: 400,
+          headers: CORS_HEADERS,
+          body: JSON.stringify({ error: 'Password must be at least 8 characters long' }),
+        };
+      }
+
+      const userResult = await docClient.send(new GetCommand({
+        TableName: USERS_TABLE,
+        Key: { Email: email },
+      }));
+
+      if (!userResult.Item) {
+        return {
+          statusCode: 400,
+          headers: CORS_HEADERS,
+          body: JSON.stringify({ error: 'Invalid or expired reset link' }),
+        };
+      }
+
+      const user = userResult.Item;
+      const tokenHash = hashResetToken(token);
+      const expiresAt = user.ResetTokenExpiresAt ? Date.parse(user.ResetTokenExpiresAt) : 0;
+
+      if (!user.ResetTokenHash || user.ResetTokenHash !== tokenHash || !expiresAt || Date.now() > expiresAt) {
+        return {
+          statusCode: 400,
+          headers: CORS_HEADERS,
+          body: JSON.stringify({ error: 'Invalid or expired reset link' }),
+        };
+      }
+
+      const { salt, hash } = hashPassword(newPassword);
+      const nowIso = new Date().toISOString();
+
+      await docClient.send(new UpdateCommand({
+        TableName: USERS_TABLE,
+        Key: { Email: email },
+        UpdateExpression: 'SET PasswordHash = :hash, Salt = :salt, UpdatedAt = :now REMOVE ResetTokenHash, ResetTokenExpiresAt, ResetTokenRequestedAt',
+        ExpressionAttributeValues: {
+          ':hash': hash,
+          ':salt': salt,
+          ':now': nowIso,
+        },
+      }));
+
+      return {
+        statusCode: 200,
+        headers: CORS_HEADERS,
+        body: JSON.stringify({ message: 'Password reset successful. You can now sign in with your new password.' }),
+      };
+    }
+
+    const isSignup = path.endsWith('/signup') || payload.action === 'signup';
 
     // ==========================================
     // 1. SIGNUP FLOW

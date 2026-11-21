@@ -82,7 +82,8 @@ export interface ShareResponse {
   httpMethod: 'GET' | 'PUT';
   expiresInSeconds: number;
   expiresAt: string;
-  preSignedUrl: string;
+  preSignedUrl?: string;
+  shareUrl?: string;
 }
 
 export interface OpenDocumentResponse {
