@@ -8,8 +8,6 @@ import {
   Key, 
   Clock, 
   Eye, 
-  Edit3, 
-  Upload, 
   Copy, 
   Check, 
   ExternalLink, 
@@ -32,7 +30,7 @@ export const ShareModal: React.FC<ShareModalProps> = ({
   onClose,
   onShareGenerated,
 }) => {
-  const [permission, setPermission] = useState<PermissionType>('VIEW');
+  const permission: PermissionType = 'VIEW';
   const [expiresIn, setExpiresIn] = useState<number>(3600); // 1 hour default
   const [targetUserId, setTargetUserId] = useState<string>('');
   const [isGenerating, setIsGenerating] = useState(false);
@@ -127,7 +125,7 @@ export const ShareModal: React.FC<ShareModalProps> = ({
                 setTargetUserId(e.target.value);
                 setShareData(null);
               }}
-              placeholder="e.g., usr_marcus_vance or analyst@corp.com"
+              placeholder="User ID or email address"
               className="w-full pl-9 pr-3 py-2 rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-300 dark:border-slate-700 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
             />
           </div>
@@ -136,59 +134,17 @@ export const ShareModal: React.FC<ShareModalProps> = ({
           </p>
         </div>
 
-        {/* Permission Level */}
+        {/* Permission Level - View only */}
         <div className="mt-4">
           <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-2">
             Access Permission
           </label>
-          <div className="grid grid-cols-3 gap-2.5">
-            <button
-              type="button"
-              onClick={() => { setPermission('VIEW'); setShareData(null); }}
-              className={`p-3 rounded-xl border text-left transition-all ${
-                permission === 'VIEW'
-                  ? 'bg-cyan-50 dark:bg-cyan-950/30 border-cyan-500 text-cyan-900 dark:text-cyan-200'
-                  : 'bg-slate-50 dark:bg-slate-900/60 border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-400'
-              }`}
-            >
-              <div className="flex items-center space-x-1.5 mb-1">
-                <Eye className="w-4 h-4 text-cyan-500" />
-                <span className="font-bold text-xs">View</span>
-              </div>
-              <p className="text-[10px] text-slate-500 dark:text-slate-400">Read-only GET access</p>
-            </button>
-
-            <button
-              type="button"
-              onClick={() => { setPermission('EDIT'); setShareData(null); }}
-              className={`p-3 rounded-xl border text-left transition-all ${
-                permission === 'EDIT'
-                  ? 'bg-indigo-50 dark:bg-indigo-950/30 border-indigo-500 text-indigo-900 dark:text-indigo-200'
-                  : 'bg-slate-50 dark:bg-slate-900/60 border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-400'
-              }`}
-            >
-              <div className="flex items-center space-x-1.5 mb-1">
-                <Edit3 className="w-4 h-4 text-indigo-500" />
-                <span className="font-bold text-xs">Edit</span>
-              </div>
-              <p className="text-[10px] text-slate-500 dark:text-slate-400">PUT presigned overwrite</p>
-            </button>
-
-            <button
-              type="button"
-              onClick={() => { setPermission('WRITE'); setShareData(null); }}
-              className={`p-3 rounded-xl border text-left transition-all ${
-                permission === 'WRITE'
-                  ? 'bg-amber-50 dark:bg-amber-950/30 border-amber-500 text-amber-900 dark:text-amber-200'
-                  : 'bg-slate-50 dark:bg-slate-900/60 border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-400'
-              }`}
-            >
-              <div className="flex items-center space-x-1.5 mb-1">
-                <Upload className="w-4 h-4 text-amber-500" />
-                <span className="font-bold text-xs">Write</span>
-              </div>
-              <p className="text-[10px] text-slate-500 dark:text-slate-400">Direct S3 upload rights</p>
-            </button>
+          <div className="p-3 rounded-xl border border-cyan-500 bg-cyan-50 dark:bg-cyan-950/30 text-left">
+            <div className="flex items-center space-x-1.5 mb-1">
+              <Eye className="w-4 h-4 text-cyan-500" />
+              <span className="font-bold text-xs text-cyan-900 dark:text-cyan-200">View</span>
+            </div>
+            <p className="text-[10px] text-slate-500 dark:text-slate-400">Read-only GET access</p>
           </div>
         </div>
 

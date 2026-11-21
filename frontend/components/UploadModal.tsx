@@ -64,7 +64,7 @@ export const UploadModal: React.FC<UploadModalProps> = ({
     try {
       setIsUploading(true);
       setErrorMsg(null);
-      await uploadDocument(selectedFile, currentUser?.fullName);
+      await uploadDocument(selectedFile);
       setSuccessMsg(`"${selectedFile.name}" vaulted under user prefix in S3 & indexed!`);
       setTimeout(() => {
         setIsUploading(false);
@@ -91,7 +91,7 @@ export const UploadModal: React.FC<UploadModalProps> = ({
             <div>
               <h3 className="font-bold text-slate-900 dark:text-white text-base">Upload Document to Vault</h3>
               <p className="text-xs text-slate-500 dark:text-slate-400">
-                Stored under prefix <span className="font-mono text-cyan-500">vault/{currentUser?.userId || 'usr_demo'}/</span>
+                Stored under prefix <span className="font-mono text-cyan-500">vault/{currentUser?.userId}/</span>
               </p>
             </div>
           </div>
@@ -157,7 +157,7 @@ export const UploadModal: React.FC<UploadModalProps> = ({
           <div className="p-3 rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 flex items-center justify-between text-xs">
             <span className="text-slate-500 dark:text-slate-400">Target Vault Owner:</span>
             <span className="font-semibold text-slate-900 dark:text-white">
-              {currentUser?.fullName || 'Demo Admin'} ({currentUser?.userId || 'usr_demo'})
+              {currentUser?.fullName} ({currentUser?.userId})
             </span>
           </div>
 

@@ -51,22 +51,6 @@ export const LandingHero: React.FC<LandingHeroProps> = ({ onAuthSuccess }) => {
     }
   };
 
-  const handleDemoFill = async (demoEmail: string, demoName: string) => {
-    setEmail(demoEmail);
-    setPassword('VaultSecurePass2026!');
-    setFullName(demoName);
-    setIsLoading(true);
-    setErrorMessage(null);
-    try {
-      const res = await loginUser(demoEmail, 'VaultSecurePass2026!');
-      onAuthSuccess(res.user);
-    } catch (err: any) {
-      setErrorMessage(err.message || 'Demo login failed');
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
   return (
     <div className="py-10 sm:py-16">
       {/* Hero Header & Value Proposition */}
@@ -174,7 +158,7 @@ export const LandingHero: React.FC<LandingHeroProps> = ({ onAuthSuccess }) => {
                     required
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}
-                    placeholder="architect@cloudcorp.com"
+                    placeholder="you@example.com"
                     className="w-full pl-9 pr-3 py-2 rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-300 dark:border-slate-700 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-cyan-500"
                   />
                 </div>
@@ -220,31 +204,6 @@ export const LandingHero: React.FC<LandingHeroProps> = ({ onAuthSuccess }) => {
                 )}
               </button>
             </form>
-
-            {/* Instant 1-Click Demo Logins */}
-            {/* <div className="mt-5 pt-4 border-t border-slate-200 dark:border-slate-800 text-center">
-              <p className="text-[11px] font-semibold text-slate-500 dark:text-slate-400 mb-2.5">
-                Instant 1-Click Demo Logins:
-              </p>
-              <div className="grid grid-cols-2 gap-2">
-                <button
-                  type="button"
-                  onClick={() => handleDemoFill('marcus@cloudcorp.com', 'Marcus Vance')}
-                  className="px-3 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-900 dark:hover:bg-slate-800 border border-slate-200 dark:border-slate-700 text-left transition-all"
-                >
-                  <p className="text-xs font-bold text-slate-800 dark:text-slate-200">Marcus Vance</p>
-                  <p className="text-[10px] text-cyan-600 dark:text-cyan-400">Principal Architect</p>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => handleDemoFill('sarah@security.io', 'Sarah Connor')}
-                  className="px-3 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-900 dark:hover:bg-slate-800 border border-slate-200 dark:border-slate-700 text-left transition-all"
-                >
-                  <p className="text-xs font-bold text-slate-800 dark:text-slate-200">Sarah Connor</p>
-                  <p className="text-[10px] text-indigo-600 dark:text-indigo-400">SecOps Lead</p>
-                </button>
-              </div>
-            </div> */}
           </div>
         </div>
       </div>
