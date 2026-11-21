@@ -131,12 +131,12 @@ CloudDoc-Vault/
 |---|---|
 | Region | `ap-south-1` |
 | Stack | `clouddoc-vault` |
-| API Gateway | `https://5sdkgk80ul.execute-api.ap-south-1.amazonaws.com/prod` |
-| Documents bucket | `clouddoc-vault-docs-799517333955-ap-south-1` |
-| SAM artifact bucket | `clouddoc-vault-sam-artifacts-799517333955-ap-south-1` |
+| API Gateway | `https://xxxxxxxxxxxxxx.ap-south-1.amazonaws.com/prod` |
+| Documents bucket | `clouddoc-vault-docs-799xxxxxxx-ap-south-1` |
+| SAM artifact bucket | `clouddoc-vault-sam-artifacts-799xxxxxxx-ap-south-1` |
 | Users table | `ClouddocUsers` |
 | Metadata table | `DocumentsMetadata` |
-| SNS topic | `arn:aws:sns:ap-south-1:799517333955:CloudDocVault_Events` |
+| SNS topic | `arn:aws:sns:ap-south-1:799xxxxxxx:CloudDocVault_Events` |
 | CloudWatch logs | `/aws/lambda/clouddoc-vault-*` |
 
 > These identifiers are account-specific. For a new deployment, update `backend/samconfig.toml` and `frontend/.env.local`.
