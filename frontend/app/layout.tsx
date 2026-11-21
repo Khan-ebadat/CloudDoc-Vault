@@ -4,6 +4,11 @@ import './globals.css';
 export const metadata: Metadata = {
   title: 'CloudDoc Vault',
   description: 'Enterprise-grade secure document vault built on Next.js 14, AWS S3, DynamoDB, and Lambda.',
+  icons: {
+    icon: '/favicon.svg',
+    shortcut: '/favicon.svg',
+    apple: '/favicon.svg',
+  },
 };
 
 export const viewport: Viewport = {
