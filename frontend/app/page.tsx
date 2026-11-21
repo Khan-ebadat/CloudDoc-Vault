@@ -202,7 +202,7 @@ export default function AppRootPage() {
       />
 
       {/* Main Content Area */}
-      <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8">
+      <main className="flex-1 max-w-7xl w-full mx-auto px-3 sm:px-6 lg:px-8">
         {!currentUser ? (
           /* ======================================================== */
           /* 1. FIRST VISIT / LOGGED OUT: HOME & AUTH LANDING PAGE    */
@@ -225,23 +225,23 @@ export default function AppRootPage() {
 
             {/* User Identity Welcome & Sync Status */}
             <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 mb-6">
-              <div>
+              <div className="min-w-0">
                 <div className="flex items-center space-x-2">
-                  <h1 className="text-2xl font-black tracking-tight text-slate-900 dark:text-white">
+                  <h1 className="text-xl sm:text-2xl font-black tracking-tight text-slate-900 dark:text-white">
                     Security Vault Dashboard
                   </h1>
-                  <span className="inline-block w-2.5 h-2.5 rounded-full bg-cyan-500"></span>
+                  <span className="inline-block w-2.5 h-2.5 rounded-full bg-cyan-500 flex-shrink-0"></span>
                 </div>
-                <p className="text-xs text-slate-500 dark:text-slate-400 mt-1 flex items-center space-x-2">
-                  <span>
+                <p className="text-xs text-slate-500 dark:text-slate-400 mt-1 flex flex-wrap items-center gap-x-2 gap-y-0.5">
+                  <span className="break-words">
                     Authenticated as: <strong className="text-slate-700 dark:text-slate-200">{currentUser.fullName}</strong> ({currentUser.email})
                   </span>
                   <span>•</span>
-                  <span className="font-mono text-cyan-600 dark:text-cyan-400">{currentUser.userId}</span>
+                  <span className="font-mono text-cyan-600 dark:text-cyan-400 break-all">{currentUser.userId}</span>
                 </p>
               </div>
 
-              <div className="flex items-center space-x-3">
+              <div className="flex items-center space-x-3 flex-shrink-0">
                 <span className="text-[11px] text-slate-400 font-mono hidden sm:inline">
                   Synced: {lastRefreshed || 'Connecting...'}
                 </span>
@@ -334,7 +334,7 @@ export default function AppRootPage() {
       {/* Toast Feedback */}
       {toast && (
         <div
-          className={`fixed bottom-5 right-5 z-[60] flex items-center space-x-2 px-4 py-3 rounded-xl shadow-2xl border text-xs font-semibold max-w-sm ${
+          className={`fixed bottom-4 left-4 right-4 sm:left-auto sm:right-5 sm:bottom-5 z-[60] flex items-center space-x-2 px-4 py-3 rounded-xl shadow-2xl border text-xs font-semibold sm:max-w-sm ${
             toast.type === 'success'
               ? 'bg-emerald-50 dark:bg-emerald-950/90 border-emerald-200 dark:border-emerald-800 text-emerald-700 dark:text-emerald-300'
               : 'bg-rose-50 dark:bg-rose-950/90 border-rose-200 dark:border-rose-800 text-rose-700 dark:text-rose-300'

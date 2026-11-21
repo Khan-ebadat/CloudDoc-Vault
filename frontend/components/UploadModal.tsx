@@ -81,7 +81,7 @@ export const UploadModal: React.FC<UploadModalProps> = ({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-md">
-      <div className="relative w-full max-w-lg rounded-2xl glass-panel border border-slate-200 dark:border-slate-800 p-6 shadow-2xl transition-colors">
+      <div className="relative w-full max-w-lg max-h-[calc(100vh-2rem)] overflow-y-auto rounded-2xl glass-panel border border-slate-200 dark:border-slate-800 p-4 sm:p-6 shadow-2xl transition-colors">
         {/* Modal Header */}
         <div className="flex items-center justify-between pb-4 border-b border-slate-200 dark:border-slate-800">
           <div className="flex items-center space-x-2.5">
@@ -129,10 +129,10 @@ export const UploadModal: React.FC<UploadModalProps> = ({
             />
 
             {selectedFile ? (
-              <div className="flex items-center justify-center space-x-3 text-emerald-600 dark:text-emerald-400">
-                <File className="w-8 h-8" />
-                <div className="text-left">
-                  <p className="text-sm font-semibold text-slate-900 dark:text-white">{selectedFile.name}</p>
+              <div className="flex items-center justify-center space-x-3 text-emerald-600 dark:text-emerald-400 min-w-0">
+                <File className="w-8 h-8 flex-shrink-0" />
+                <div className="text-left min-w-0">
+                  <p className="text-sm font-semibold text-slate-900 dark:text-white truncate max-w-[180px] sm:max-w-none">{selectedFile.name}</p>
                   <p className="text-xs text-slate-500 dark:text-slate-400">
                     {(selectedFile.size / (1024 * 1024)).toFixed(2)} MB • {selectedFile.type || 'Binary Document'}
                   </p>

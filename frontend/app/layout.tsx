@@ -1,9 +1,14 @@
-import type { Metadata } from 'next';
+import type { Metadata, Viewport } from 'next';
 import './globals.css';
 
 export const metadata: Metadata = {
   title: 'CloudDoc Vault | Secure Cloud Document Vault & Ephemeral Sharing',
   description: 'Enterprise-grade secure document vault built on Next.js 14, AWS S3, DynamoDB, and Lambda.',
+};
+
+export const viewport: Viewport = {
+  width: 'device-width',
+  initialScale: 1,
 };
 
 export default function RootLayout({

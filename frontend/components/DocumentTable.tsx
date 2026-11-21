@@ -108,10 +108,10 @@ export const DocumentTable: React.FC<DocumentTableProps> = ({
           />
         </div>
 
-        <div className="flex items-center space-x-2">
+        <div className="flex flex-wrap items-center gap-2">
           <button
             onClick={() => setFilterType('ALL')}
-            className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${
+            className={`px-2.5 sm:px-3 py-1.5 rounded-lg text-[11px] sm:text-xs font-semibold whitespace-nowrap transition-all ${
               filterType === 'ALL'
                 ? 'bg-cyan-500/10 dark:bg-cyan-500/20 text-cyan-600 dark:text-cyan-300 border border-cyan-500/40'
                 : 'text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200'
@@ -121,7 +121,7 @@ export const DocumentTable: React.FC<DocumentTableProps> = ({
           </button>
           <button
             onClick={() => setFilterType('MINE')}
-            className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${
+            className={`px-2.5 sm:px-3 py-1.5 rounded-lg text-[11px] sm:text-xs font-semibold whitespace-nowrap transition-all ${
               filterType === 'MINE'
                 ? 'bg-indigo-500/10 dark:bg-indigo-500/20 text-indigo-600 dark:text-indigo-300 border border-indigo-500/40'
                 : 'text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200'
@@ -131,7 +131,7 @@ export const DocumentTable: React.FC<DocumentTableProps> = ({
           </button>
           <button
             onClick={() => setFilterType('SHARED')}
-            className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${
+            className={`px-2.5 sm:px-3 py-1.5 rounded-lg text-[11px] sm:text-xs font-semibold whitespace-nowrap transition-all ${
               filterType === 'SHARED'
                 ? 'bg-emerald-500/10 dark:bg-emerald-500/20 text-emerald-600 dark:text-emerald-300 border border-emerald-500/40'
                 : 'text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200'
@@ -147,12 +147,12 @@ export const DocumentTable: React.FC<DocumentTableProps> = ({
         <table className="w-full text-left text-sm text-slate-700 dark:text-slate-300">
           <thead className="bg-slate-100 dark:bg-slate-900/80 text-xs uppercase text-slate-500 dark:text-slate-400 border-b border-slate-200 dark:border-slate-800 tracking-wider">
             <tr>
-              <th scope="col" className="px-6 py-3.5 font-semibold">Document Name</th>
-              <th scope="col" className="px-6 py-3.5 font-semibold">Size</th>
-              <th scope="col" className="px-6 py-3.5 font-semibold">Vault Owner</th>
-              <th scope="col" className="px-6 py-3.5 font-semibold">Upload Date</th>
-              <th scope="col" className="px-6 py-3.5 font-semibold">Sharing Policy</th>
-              <th scope="col" className="px-6 py-3.5 font-semibold text-right">Actions</th>
+              <th scope="col" className="px-3 sm:px-6 py-3.5 font-semibold">Document Name</th>
+              <th scope="col" className="hidden md:table-cell px-3 sm:px-6 py-3.5 font-semibold">Size</th>
+              <th scope="col" className="hidden md:table-cell px-3 sm:px-6 py-3.5 font-semibold">Vault Owner</th>
+              <th scope="col" className="hidden md:table-cell px-3 sm:px-6 py-3.5 font-semibold">Upload Date</th>
+              <th scope="col" className="hidden md:table-cell px-3 sm:px-6 py-3.5 font-semibold">Sharing Policy</th>
+              <th scope="col" className="px-3 sm:px-6 py-3.5 font-semibold text-right">Actions</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-200 dark:divide-slate-800/60">
@@ -182,20 +182,20 @@ export const DocumentTable: React.FC<DocumentTableProps> = ({
 
                 return (
                   <tr key={doc.DocumentID} className="hover:bg-slate-50 dark:hover:bg-slate-800/40 transition-colors group">
-                    <td className="px-6 py-4">
+                    <td className="px-3 sm:px-6 py-4">
                       <div className="flex items-center space-x-3">
                         <div className="p-2.5 rounded-xl bg-slate-100 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 flex-shrink-0">
                           {getFileIcon(doc.ContentType, doc.FileName)}
                         </div>
                         <div className="min-w-0">
-                          <p className="font-semibold text-slate-900 dark:text-white truncate max-w-xs sm:max-w-md group-hover:text-cyan-500 transition-colors">
+                          <p className="font-semibold text-slate-900 dark:text-white truncate max-w-[130px] sm:max-w-xs md:max-w-md group-hover:text-cyan-500 transition-colors">
                             {doc.FileName}
                           </p>
                           <div className="flex items-center space-x-2 text-[11px] text-slate-400">
-                            <span>{doc.DocumentID}</span>
+                            <span className="truncate max-w-[110px] sm:max-w-none">{doc.DocumentID}</span>
                             <button
                               onClick={() => handleCopyId(doc.DocumentID)}
-                              className="hover:text-cyan-500 transition-colors"
+                              className="hover:text-cyan-500 transition-colors flex-shrink-0"
                               title="Copy ID"
                             >
                               {copiedId === doc.DocumentID ? (
@@ -205,15 +205,27 @@ export const DocumentTable: React.FC<DocumentTableProps> = ({
                               )}
                             </button>
                           </div>
+                          {/* Compact metadata for small screens */}
+                          <div className="md:hidden mt-1 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[10px] text-slate-500 dark:text-slate-400">
+                            <span className="font-mono">{formatFileSize(doc.FileSize)}</span>
+                            <span>•</span>
+                            <span>{isOwner ? 'You' : (doc.OwnerName || 'System Admin')}</span>
+                            <span>•</span>
+                            <span>{new Date(doc.UploadDate).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}</span>
+                            <span>•</span>
+                            <span className={isShared ? 'text-indigo-500 dark:text-indigo-400 font-semibold' : ''}>
+                              {isShared ? 'Shared' : 'Private'}
+                            </span>
+                          </div>
                         </div>
                       </div>
                     </td>
 
-                    <td className="px-6 py-4 whitespace-nowrap text-xs text-slate-500 dark:text-slate-400 font-mono">
+                    <td className="hidden md:table-cell px-3 sm:px-6 py-4 whitespace-nowrap text-xs text-slate-500 dark:text-slate-400 font-mono">
                       {formatFileSize(doc.FileSize)}
                     </td>
 
-                    <td className="px-6 py-4 whitespace-nowrap text-xs">
+                    <td className="hidden md:table-cell px-3 sm:px-6 py-4 whitespace-nowrap text-xs">
                       <div className="flex items-center space-x-1.5">
                         <span className="font-medium text-slate-800 dark:text-slate-200">
                           {isOwner ? 'You' : (doc.OwnerName || 'System Admin')}
@@ -226,7 +238,7 @@ export const DocumentTable: React.FC<DocumentTableProps> = ({
                       </div>
                     </td>
 
-                    <td className="px-6 py-4 whitespace-nowrap text-xs text-slate-500 dark:text-slate-400">
+                    <td className="hidden md:table-cell px-3 sm:px-6 py-4 whitespace-nowrap text-xs text-slate-500 dark:text-slate-400">
                       {new Date(doc.UploadDate).toLocaleDateString(undefined, {
                         month: 'short',
                         day: 'numeric',
@@ -234,7 +246,7 @@ export const DocumentTable: React.FC<DocumentTableProps> = ({
                       })}
                     </td>
 
-                    <td className="px-6 py-4 whitespace-nowrap">
+                    <td className="hidden md:table-cell px-3 sm:px-6 py-4 whitespace-nowrap">
                       {isShared ? (
                         <div className="flex items-center space-x-1.5">
                           <span className="inline-flex items-center space-x-1 px-2.5 py-1 rounded-full text-[11px] font-semibold bg-indigo-50 dark:bg-indigo-950/80 text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-700/60">
@@ -256,12 +268,13 @@ export const DocumentTable: React.FC<DocumentTableProps> = ({
                       )}
                     </td>
 
-                    <td className="px-6 py-4 whitespace-nowrap text-right">
+                    <td className="px-3 sm:px-6 py-4 whitespace-nowrap text-right">
                       <div className="flex items-center justify-end space-x-1.5">
                         <button
                           onClick={() => onOpenDocument(doc)}
                           disabled={openingDocId === doc.DocumentID}
-                          className="inline-flex items-center space-x-1.5 px-3 py-1.5 rounded-lg bg-cyan-50 hover:bg-cyan-100 dark:bg-cyan-500/10 dark:hover:bg-cyan-500/20 text-cyan-600 dark:text-cyan-300 border border-cyan-200 dark:border-cyan-500/30 text-xs font-semibold transition-all hover:scale-105 active:scale-95 disabled:opacity-50 disabled:cursor-wait"
+                          className="inline-flex items-center space-x-1.5 px-2 sm:px-3 py-1.5 rounded-lg bg-cyan-50 hover:bg-cyan-100 dark:bg-cyan-500/10 dark:hover:bg-cyan-500/20 text-cyan-600 dark:text-cyan-300 border border-cyan-200 dark:border-cyan-500/30 text-xs font-semibold transition-all hover:scale-105 active:scale-95 disabled:opacity-50 disabled:cursor-wait"
+                          aria-label="Open document"
                           title="Open document in a new tab"
                         >
                           {openingDocId === doc.DocumentID ? (
@@ -269,12 +282,13 @@ export const DocumentTable: React.FC<DocumentTableProps> = ({
                           ) : (
                             <ExternalLink className="w-3.5 h-3.5" />
                           )}
-                          <span>Open</span>
+                          <span className="hidden sm:inline">Open</span>
                         </button>
 
                         <button
                           onClick={() => onOpenShare(doc)}
-                          className="inline-flex items-center space-x-1.5 px-3 py-1.5 rounded-lg bg-indigo-50 hover:bg-indigo-100 dark:bg-indigo-500/10 dark:hover:bg-indigo-500/20 text-indigo-600 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-500/30 text-xs font-semibold transition-all hover:scale-105 active:scale-95"
+                          aria-label="Share document"
+                          className="inline-flex items-center space-x-1.5 px-2 sm:px-3 py-1.5 rounded-lg bg-indigo-50 hover:bg-indigo-100 dark:bg-indigo-500/10 dark:hover:bg-indigo-500/20 text-indigo-600 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-500/30 text-xs font-semibold transition-all hover:scale-105 active:scale-95"
                         >
                           <Share2 className="w-3.5 h-3.5" />
                           <span className="hidden sm:inline">Share Link</span>

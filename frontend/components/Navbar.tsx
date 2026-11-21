@@ -52,16 +52,16 @@ export const Navbar: React.FC<NavbarProps> = ({
   };
 
   return (
-    <header className="sticky top-0 z-40 w-full glass-panel border-b border-slate-200 dark:border-slate-800/80 px-4 sm:px-6 py-3.5 transition-colors duration-200">
-      <div className="max-w-7xl mx-auto flex items-center justify-between gap-4">
+    <header className="sticky top-0 z-40 w-full glass-panel border-b border-slate-200 dark:border-slate-800/80 px-3 sm:px-6 py-3 sm:py-3.5 transition-colors duration-200">
+      <div className="max-w-7xl mx-auto flex items-center justify-between gap-2 sm:gap-4">
         {/* Logo & Brand */}
-        <div className="flex items-center space-x-3">
-          <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-cyan-500 via-indigo-500 to-purple-600 flex items-center justify-center shadow-lg shadow-cyan-500/20 flex-shrink-0">
-            <ShieldCheck className="w-6 h-6 text-white" />
+        <div className="flex items-center space-x-2 sm:space-x-3 min-w-0">
+          <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-xl bg-gradient-to-tr from-cyan-500 via-indigo-500 to-purple-600 flex items-center justify-center shadow-lg shadow-cyan-500/20 flex-shrink-0">
+            <ShieldCheck className="w-5 h-5 sm:w-6 sm:h-6 text-white" />
           </div>
-          <div>
+          <div className="min-w-0">
             <div className="flex items-center space-x-2">
-              <span className="font-extrabold text-lg sm:text-xl tracking-tight text-slate-900 dark:text-white">
+              <span className="font-extrabold text-base sm:text-xl tracking-tight text-slate-900 dark:text-white truncate">
                 CloudDoc<span className="text-cyan-500">Vault</span>
               </span>
               <span className="text-[10px] uppercase font-semibold px-2 py-0.5 rounded-full bg-cyan-100 dark:bg-cyan-950 text-cyan-700 dark:text-cyan-300 border border-cyan-300 dark:border-cyan-800 hidden sm:inline-block">
@@ -94,7 +94,7 @@ export const Navbar: React.FC<NavbarProps> = ({
         </div>
 
         {/* User Controls & Theme Toggle */}
-        <div className="flex items-center space-x-2 sm:space-x-3">
+        <div className="flex items-center space-x-1.5 sm:space-x-3 flex-shrink-0">
           {/* Share Notification Bell */}
           {user && (
             <NotificationBell
@@ -144,18 +144,20 @@ export const Navbar: React.FC<NavbarProps> = ({
               className="flex items-center space-x-1.5 px-3 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-900 dark:hover:bg-slate-800 border border-slate-300 dark:border-slate-700 text-slate-800 dark:text-slate-200 text-xs font-semibold transition-all"
             >
               <User className="w-3.5 h-3.5" />
-              <span>Sign In / Register</span>
+              <span className="hidden sm:inline">Sign In / Register</span>
+              <span className="sm:hidden">Sign In</span>
             </button>
           )}
 
           {/* Upload Button */}
           <button
             id="open-upload-modal-btn"
+            aria-label="Upload document"
             onClick={onOpenUpload}
             className="flex items-center space-x-1.5 px-3.5 py-2 rounded-xl bg-gradient-to-r from-cyan-500 to-indigo-600 hover:from-cyan-400 hover:to-indigo-500 text-white font-medium text-xs sm:text-sm shadow-md shadow-cyan-500/25 transition-all duration-200 active:scale-95"
           >
             <Plus className="w-4 h-4" />
-            <span>Upload</span>
+            <span className="hidden sm:inline">Upload</span>
           </button>
         </div>
       </div>

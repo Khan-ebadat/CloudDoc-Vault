@@ -71,18 +71,18 @@ export const LandingHero: React.FC<LandingHeroProps> = ({ onAuthSuccess }) => {
           </p>
 
           {/* Quick Metrics Pills */}
-          <div className="grid grid-cols-3 gap-3 pt-2">
-            <div className="p-3.5 rounded-2xl glass-panel border border-slate-200 dark:border-slate-800">
-              <p className="text-xl sm:text-2xl font-black text-cyan-600 dark:text-cyan-400">100%</p>
-              <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">Private S3 Buckets</p>
+          <div className="grid grid-cols-3 gap-2 sm:gap-3 pt-2">
+            <div className="p-2.5 sm:p-3.5 rounded-2xl glass-panel border border-slate-200 dark:border-slate-800">
+              <p className="text-base sm:text-2xl font-black text-cyan-600 dark:text-cyan-400">100%</p>
+              <p className="text-[10px] sm:text-xs text-slate-500 dark:text-slate-400 mt-0.5">Private S3 Buckets</p>
             </div>
-            <div className="p-3.5 rounded-2xl glass-panel border border-slate-200 dark:border-slate-800">
-              <p className="text-xl sm:text-2xl font-black text-indigo-600 dark:text-indigo-400">AES-256</p>
-              <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">SSE Encrypted At Rest</p>
+            <div className="p-2.5 sm:p-3.5 rounded-2xl glass-panel border border-slate-200 dark:border-slate-800">
+              <p className="text-base sm:text-2xl font-black text-indigo-600 dark:text-indigo-400">AES-256</p>
+              <p className="text-[10px] sm:text-xs text-slate-500 dark:text-slate-400 mt-0.5">SSE Encrypted At Rest</p>
             </div>
-            <div className="p-3.5 rounded-2xl glass-panel border border-slate-200 dark:border-slate-800">
-              <p className="text-xl sm:text-2xl font-black text-emerald-600 dark:text-emerald-400">SigV4</p>
-              <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">Time-Bounded Links</p>
+            <div className="p-2.5 sm:p-3.5 rounded-2xl glass-panel border border-slate-200 dark:border-slate-800">
+              <p className="text-base sm:text-2xl font-black text-emerald-600 dark:text-emerald-400">SigV4</p>
+              <p className="text-[10px] sm:text-xs text-slate-500 dark:text-slate-400 mt-0.5">Time-Bounded Links</p>
             </div>
           </div>
         </div>

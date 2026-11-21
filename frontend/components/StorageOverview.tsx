@@ -15,9 +15,9 @@ export const StorageOverview: React.FC<StorageOverviewProps> = ({ metrics, loadi
   const usedPercentage = metrics?.usedPercentage || '0.00';
 
   return (
-    <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-8 transition-colors">
+    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6 mb-8 transition-colors">
       {/* 1. Main Storage Usage Meter Card */}
-      <div className="lg:col-span-2 rounded-2xl glass-panel p-6 relative overflow-hidden border border-slate-200 dark:border-slate-800">
+      <div className="sm:col-span-2 rounded-2xl glass-panel p-5 sm:p-6 relative overflow-hidden border border-slate-200 dark:border-slate-800">
         <div className="absolute top-0 right-0 w-80 h-80 bg-cyan-500/5 rounded-full blur-3xl pointer-events-none"></div>
 
         <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between pb-4 border-b border-slate-200 dark:border-slate-800">
@@ -95,7 +95,7 @@ export const StorageOverview: React.FC<StorageOverviewProps> = ({ metrics, loadi
       </div>
 
       {/* 2. Security & Policy Status Card */}
-      <div className="rounded-2xl glass-panel p-6 flex flex-col justify-between border border-slate-200 dark:border-slate-800 relative overflow-hidden">
+      <div className="rounded-2xl glass-panel p-5 sm:p-6 flex flex-col justify-between border border-slate-200 dark:border-slate-800 relative overflow-hidden">
         <div>
           <div className="flex items-center justify-between pb-3 border-b border-slate-200 dark:border-slate-800">
             <div className="flex items-center space-x-2">

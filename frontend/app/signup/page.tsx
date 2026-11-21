@@ -31,7 +31,7 @@ export default function SignupPage() {
 
   return (
     <div className="min-h-screen flex items-center justify-center p-4 bg-slate-50 dark:bg-[#070A11] text-slate-900 dark:text-slate-100 transition-colors">
-      <div className="w-full max-w-md p-8 rounded-2xl glass-panel border border-slate-200 dark:border-slate-800 shadow-2xl">
+      <div className="w-full max-w-md p-6 sm:p-8 rounded-2xl glass-panel border border-slate-200 dark:border-slate-800 shadow-2xl">
         <div className="text-center mb-8">
           <div className="w-12 h-12 mx-auto rounded-2xl bg-gradient-to-tr from-cyan-500 to-indigo-600 flex items-center justify-center shadow-lg shadow-cyan-500/25 mb-3">
             <ShieldCheck className="w-7 h-7 text-white" />
