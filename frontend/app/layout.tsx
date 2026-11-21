@@ -2,7 +2,7 @@ import type { Metadata, Viewport } from 'next';
 import './globals.css';
 
 export const metadata: Metadata = {
-  title: 'CloudDoc Vault | Secure Cloud Document Vault & Ephemeral Sharing',
+  title: 'CloudDoc Vault',
   description: 'Enterprise-grade secure document vault built on Next.js 14, AWS S3, DynamoDB, and Lambda.',
 };
 
