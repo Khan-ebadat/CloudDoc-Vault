@@ -1,213 +1,276 @@
-# CloudDoc Vault: Secure Cloud Document Vault & Ephemeral Sharing Platform
+# CloudDoc Vault
 
-CloudDoc Vault is an enterprise-grade, serverless document management vault powered by AWS services and a Next.js 14+ App Router frontend. It implements zero-trust private S3 storage under user-isolated prefixes, dual DynamoDB indexing (`ClouddocUsers` and `DocumentsMetadata`), cryptographic S3 Pre-Signed URLs (GET/PUT), and Amazon SNS automated alerts.
+**Secure, serverless document storage with time-limited sharing links.**
 
----
+CloudDoc Vault is a full-stack, zero-trust document vault built with a **Next.js 14** frontend and an **AWS SAM / Lambda** backend. Files are stored privately in S3 under per-user prefixes, metadata lives in DynamoDB, access is enforced with JWTs and short-lived SigV4 pre-signed URLs, and Amazon SNS sends per-user email alerts.
 
-## 1. System Architecture Overview
-
-```
-[ User Browser / Next.js 14 Client ]
-              |
-              |-- (1) REST Requests (CORS Enabled with Bearer JWT)
-              v
-[ Amazon API Gateway (REST API /prod) ]
-              |
-   +----------+----------+----------+
-   |          |          |          |
-   v          v          v          v
-[ auth      [ upload   [ getDocs   [ share
-  Handler]    Handler]   Handler]    Handler]
-   |          |          |          |
-   |-- (2)    |-- (3)    |-- (4)    |-- (5)
-   |  Auth    |  Write   |  Query   |  Generate
-   |  Verify  |  S3 &    |  Owner & |  S3 SigV4
-   |  & Token |  Dynamo  |  Shared  |  Pre-Signed URL
-   v          v          v          v
-[ DynamoDB:  [ Amazon   [ DynamoDB: [ Amazon
- Clouddoc      S3:       Documents   SNS:
- Users ]     vault/       Metadata]  Upload Alerts
-             {userId}/               (Email)
-```
+> The app is deployed with the frontend on **Vercel** and the backend already running on **AWS** in `ap-south-1`.
 
 ---
 
-## 2. Project Directory Tree
+## Table of contents
+
+1. [Features](#1-features)
+2. [Architecture](#2-architecture)
+3. [Tech stack](#3-tech-stack)
+4. [Project structure](#4-project-structure)
+5. [AWS resources (current deployment)](#5-aws-resources-current-deployment)
+6. [API endpoints](#6-api-endpoints)
+7. [Security model](#7-security-model)
+8. [How the main workflows work](#8-how-the-main-workflows-work)
+9. [Local development](#9-local-development)
+10. [Deployment](#10-deployment)
+11. [Environment variables & secrets](#11-environment-variables--secrets)
+12. [Troubleshooting](#12-troubleshooting)
+13. [Future scope](#13-future-scope)
+
+---
+
+## 1. Features
+
+- 🔐 **User isolation** — every object is stored at `vault/{userId}/{documentId}/{fileName}`; the bucket blocks all public access and uses SSE-S3 (AES-256).
+- 🔑 **JWT authentication** — PBKDF2 password hashing with per-user salts and signed session tokens.
+- ⏳ **Ephemeral sharing** — SigV4 pre-signed GET links that expire in 15 minutes to 7 days.
+- 👁️ **View-only sharing** — the UI only offers read-only access. Edit/Write options were intentionally removed because a pre-signed PUT is a full overwrite, not collaborative editing.
+- 📨 **Email notifications** — SNS topic with one filtered subscription per user, so alerts are routed only to the intended recipient.
+- 📊 **Dashboard** — storage usage, file-type breakdown, search/filter, share notifications, and dark/light themes.
+- 📱 **Fully responsive** — works on phones, tablets, and desktops.
+- 🖥️ **Inline preview** — PDFs/images render inline; text-like files (CSV, JSON, XML, etc.) are served as `text/plain` for preview so the browser displays them instead of downloading.
+
+---
+
+## 2. Architecture
+
+```
+ Browser (Next.js 14 on Vercel)
+        |
+        |  REST + Bearer JWT
+        v
+ API Gateway (REST API, stage /prod)
+        |
+        +--> AuthFunction          (signup, login, notification status)
+        +--> UploadDocumentFunction
+        +--> GetDocumentsFunction
+        +--> ShareDocumentFunction
+        +--> OpenDocumentFunction
+        +--> DeleteDocumentFunction
+                 |
+     +-----------+-----------+-----------+
+     v           v           v           v
+   Amazon     DynamoDB    DynamoDB    Amazon SNS
+     S3       Clouddoc    Documents   CloudDocVault_Events
+             Users       Metadata
+```
+
+**Storage**
+
+- `ClouddocUsers` — partition key `Email`, GSI `UserIDIndex`; stores password hash, salt, user profile, and SNS subscription state.
+- `DocumentsMetadata` — partition key `DocumentID`, GSI `OwnerIDIndex`; stores file metadata, content type, S3 key, and the `SharedWith` permission array.
+- S3 — private documents bucket + a separate versioned bucket for SAM artifacts.
+- SNS — one topic, per-user filter policies on the `recipient` message attribute.
+
+---
+
+## 3. Tech stack
+
+| Layer | Technology |
+|---|---|
+| Frontend | Next.js 14 (App Router), React 18, TypeScript, Tailwind CSS, lucide-react |
+| Hosting | Vercel (frontend), AWS (backend) |
+| API | Amazon API Gateway (REST) |
+| Compute | AWS Lambda (Node.js 22.x, arm64, 512 MB) |
+| Storage | Amazon S3 (SSE-S3), DynamoDB (on-demand, PITR) |
+| Notifications | Amazon SNS |
+| IaC / CI | AWS SAM, CloudFormation, npm |
+
+---
+
+## 4. Project structure
 
 ```
 CloudDoc-Vault/
 ├── backend/
 │   ├── handlers/
-│   │   ├── authHandler.js              # Signup & login with PBKDF2 hashing & JWT sessions
-│   │   ├── uploadHandler.js            # User-prefix S3 storage, metadata & per-user upload email
-│   │   ├── getDocumentsHandler.js      # Retrieves owned + shared docs with storage quota analytics
-│   │   ├── shareHandler.js             # Pre-signed URLs (GET/PUT) + share email to the recipient
-│   │   ├── openHandler.js              # Issues short-lived GET URLs for in-browser preview
-│   │   └── deleteHandler.js            # Owner-only S3 object + DynamoDB metadata deletion
+│   │   ├── authHandler.js            # signup, login, SNS status
+│   │   ├── uploadHandler.js          # base64 -> S3 + metadata + alert
+│   │   ├── getDocumentsHandler.js    # owned + shared docs, storage metrics
+│   │   ├── shareHandler.js           # generates VIEW pre-signed GET links
+│   │   ├── openHandler.js            # preview/download GET links
+│   │   └── deleteHandler.js          # owner-only delete
 │   ├── lib/
-│   │   ├── authUtils.js                # PBKDF2 password hashing & zero-dependency JWT engine
-│   │   ├── notifications.js            # Per-user SNS subscriptions + filtered publishes
-│   │   └── awsClients.js               # AWS SDK v3 singletons & CORS configuration
-│   ├── template.yaml                   # AWS SAM Infrastructure as Code (IaC)
-│   ├── package.json                    # Backend dependencies (@aws-sdk/*)
-│   └── .env.example
+│   │   ├── authUtils.js              # PBKDF2 hashing + JWT signing/verification
+│   │   ├── awsClients.js             # AWS SDK v3 clients + CORS headers
+│   │   └── notifications.js          # per-user SNS subscriptions/publishes
+│   ├── template.yaml                 # SAM infrastructure definition
+│   ├── samconfig.toml                # deploy configuration
+│   ├── package.json
+│   ├── .env.example                  # template only - no real secrets
+│   ├── .npmignore / .samignore       # keep build artifacts out of SAM packaging
+│   └── .aws-sam/                     # local build output (gitignored)
 ├── frontend/
 │   ├── app/
-│   │   ├── login/page.tsx              # Standalone Login Page
-│   │   ├── signup/page.tsx             # Standalone Registration Page
-│   │   ├── globals.css                 # Dual Light/Dark mode glassmorphism styling
-│   │   ├── layout.tsx                  # Root layout & metadata
-│   │   └── page.tsx                    # Primary Security Vault Dashboard layout
-│   ├── components/
-│   │   ├── Navbar.tsx                  # Header with Dark/Light mode toggle & AWS health badges
-│   │   ├── AuthModal.tsx               # Instant in-app Sign In & Registration modal
-│   │   ├── StorageOverview.tsx         # Storage quota progress bar & category breakdown
-│   │   ├── DocumentTable.tsx           # Searchable, filterable document registry table
-│   │   ├── UploadModal.tsx             # File drag-and-drop & base64 upload modal
-│   │   ├── ShareModal.tsx              # Pre-signed link modal (View, Edit, Write & Expiry)
-│   │   ├── DeleteConfirmModal.tsx      # Owner-only permanent delete confirmation
-│   │   ├── NotificationBanner.tsx      # Prompts the user to confirm their SNS email subscription
-│   │   └── NotificationBell.tsx        # Share notifications with unread badge & quick open
-│   ├── lib/
-│   │   ├── api.ts                      # REST client with offline fallback demo mode
-│   │   └── types.ts                    # TypeScript data models
-│   ├── tailwind.config.ts              # Custom vault palette & dark mode configuration
-│   ├── tsconfig.json
-│   ├── package.json
+│   │   ├── page.tsx                  # dashboard
+│   │   ├── login/page.tsx
+│   │   ├── signup/page.tsx
+│   │   ├── layout.tsx                # metadata + favicon
+│   │   └── globals.css
+│   ├── components/                   # Navbar, UploadModal, ShareModal, etc.
+│   ├── lib/api.ts                    # REST client (real API only)
+│   ├── lib/types.ts                  # TypeScript models
+│   ├── public/favicon.svg            # browser tab icon
 │   └── .env.example
+├── .gitignore                        # ignores .env*, AWS credentials, build output
 └── README.md
-```
-
-### 2.1 Where Your Data Lives in AWS (current deployment)
-
-| Data | AWS service | Exact location |
-|---|---|---|
-| Uploaded files | Amazon S3 | `s3://clouddoc-vault-docs-799517333955-ap-south-1/vault/{userId}/{documentId}/{fileName}` |
-| User accounts | DynamoDB | Table `ClouddocUsers` (partition key `Email`, GSI `UserIDIndex`) |
-| Document metadata & sharing | DynamoDB | Table `DocumentsMetadata` (partition key `DocumentID`, GSI `OwnerIDIndex`) |
-| Upload/share alerts | Amazon SNS | `arn:aws:sns:ap-south-1:799517333955:CloudDocVault_Events` (one filtered email subscription per user) |
-| Lambda logs | CloudWatch Logs | `/aws/lambda/clouddoc-vault-*` |
-| REST API | API Gateway | `https://c04zvobpc0.execute-api.ap-south-1.amazonaws.com/prod` |
-| SAM deployment artifacts | Amazon S3 | `s3://clouddoc-vault-sam-artifacts-799517333955-ap-south-1/clouddoc-vault/` |
-| Infrastructure state | CloudFormation | Stack `clouddoc-vault` (region `ap-south-1`) |
-
-> These values are specific to the current AWS account `799517333955`. If you deploy to another account/region, update this table and `frontend/.env.local`.
-
-### 2.2 How email notifications are routed
-
-SNS `Publish` has no recipient field - a message fans out to **every confirmed subscription** on the
-topic. CloudDoc Vault gets per-user delivery by pairing each subscription with a filter policy:
-
-```
-Topic: CloudDocVault_Events
-├── email -> alice@example.com   FilterPolicy {"recipient":["alice@example.com"]}   CONFIRMED
-├── email -> bob@example.com     FilterPolicy {"recipient":["bob@example.com"]}     PENDING
-└── email -> admin@example.com   (no filter policy = receives every event)
-```
-
-- `uploadHandler` publishes `DOCUMENT_UPLOADED` with `recipient = <uploader email>`.
-- `shareHandler` publishes `DOCUMENT_SHARED` with `recipient = <recipient email>`.
-- Each user's subscription is created on signup/login by `backend/lib/notifications.js`.
-- The user record in `ClouddocUsers` stores `NotificationEmail`, `NotificationStatus`
-  (`PENDING` / `CONFIRMED`), and `NotificationSubscriptionArn`.
-- `GET /auth/notifications` refreshes that state; the dashboard banner shows until the user
-  clicks the AWS confirmation link.
-
-Useful commands:
-
-```powershell
-# See every subscription and who it points at
-aws sns list-subscriptions-by-topic `
-  --topic-arn arn:aws:sns:ap-south-1:799517333955:CloudDocVault_Events `
-  --region ap-south-1
-
-# Make an address receive only its own alerts
-aws sns set-subscription-attributes --subscription-arn <sub-arn> `
-  --attribute-name FilterPolicy `
-  --attribute-value '{"recipient":["user@example.com"]}' --region ap-south-1
-
-# Make an address receive every alert (admin copy)
-aws sns set-subscription-attributes --subscription-arn <sub-arn> `
-  --attribute-name FilterPolicy --attribute-value '{}' --region ap-south-1
 ```
 
 ---
 
-## 3. AWS Step-by-Step Configuration Guide
+## 5. AWS resources (current deployment)
 
-### Step 3.1: Amazon S3 Private Bucket Setup
-1. Open the **Amazon S3 Console** and click **Create bucket**.
-2. **Bucket Name**: `clouddoc-vault-docs-<account-id>-<region>`
-3. **Block Public Access**: Keep **Block all public access** checked (Zero-Trust).
-4. **Bucket Encryption**: Enable **Server-side encryption with Amazon S3 managed keys (SSE-S3)**.
-5. In bucket **Permissions** > **Cross-origin resource sharing (CORS)**, save the following JSON:
-```json
-[
-  {
-    "AllowedHeaders": ["*"],
-    "AllowedMethods": ["GET", "PUT", "POST", "HEAD"],
-    "AllowedOrigins": ["*"],
-    "ExposeHeaders": ["ETag"],
-    "MaxAgeSeconds": 3600
-  }
-]
+| Resource | Exact value |
+|---|---|
+| Region | `ap-south-1` |
+| Stack | `clouddoc-vault` |
+| API Gateway | `https://5sdkgk80ul.execute-api.ap-south-1.amazonaws.com/prod` |
+| Documents bucket | `clouddoc-vault-docs-799517333955-ap-south-1` |
+| SAM artifact bucket | `clouddoc-vault-sam-artifacts-799517333955-ap-south-1` |
+| Users table | `ClouddocUsers` |
+| Metadata table | `DocumentsMetadata` |
+| SNS topic | `arn:aws:sns:ap-south-1:799517333955:CloudDocVault_Events` |
+| CloudWatch logs | `/aws/lambda/clouddoc-vault-*` |
+
+> These identifiers are account-specific. For a new deployment, update `backend/samconfig.toml` and `frontend/.env.local`.
+
+---
+
+## 6. API endpoints
+
+All routes are under the API Gateway base URL. Protected routes require `Authorization: Bearer <jwt>`.
+
+| Method | Route | Purpose |
+|---|---|---|
+| POST | `/auth/signup` | Create account, hash password, subscribe email to SNS |
+| POST | `/auth/login` | Verify credentials, return JWT |
+| GET | `/auth/notifications` | Refresh SNS subscription status |
+| POST | `/documents` | Upload a document (base64 body) |
+| GET | `/documents` | List documents owned by or shared with the user |
+| POST | `/documents/share` | Create a VIEW pre-signed GET link for a recipient |
+| GET | `/documents/{id}/download` | Preview (`inline`) or forced download (`?download=1`) |
+| DELETE | `/documents/{id}` | Delete an owned document from S3 + DynamoDB |
+
+---
+
+## 7. Security model
+
+- **Private by default** — no public bucket access; all reads/writes go through SigV4 pre-signed URLs generated by Lambda.
+- **JWT verification** — every protected handler validates the bearer token before touching data.
+- **Owner checks** — deletion is restricted to `OwnerID`; opening/sharing validates entry in `SharedWith` or ownership.
+- **View-only UI** — the share modal only issues GET links. EDIT/WRITE are not exposed in the frontend.
+- **Link expiry** — 15 minutes to 7 days, chosen at share time.
+- **No secrets in git** — `.gitignore` excludes `.env*`, AWS credentials, keys, and build output. Only `.env.example` templates are committed.
+
+---
+
+## 8. How the main workflows work
+
+**Signup / Login** — credentials are sent to `authHandler`; the password is PBKDF2-hashed with a random salt, a JWT is issued, and an SNS subscription is created for the user (confirmed once via email).
+
+**Upload** — the frontend sends base64 file data; Lambda writes the object to S3 with metadata, inserts a DynamoDB record, and publishes an upload alert to the uploader.
+
+**Open / Preview** — `openHandler` creates a 15-minute GET URL. Text-like MIME types are overridden to `text/plain; charset=utf-8` for inline rendering; forced downloads keep the real MIME type.
+
+**Share** — owner picks a recipient (UserID or email) and expiry. `shareHandler` stores the permission in `SharedWith`, generates a pre-signed GET link, and publishes a `DOCUMENT_SHARED` alert to the recipient. **The link itself is not emailed** — the owner copies it from the modal.
+
+**Delete** — owner-only; removes both the S3 object and the DynamoDB item.
+
+---
+
+## 9. Local development
+
+```bash
+# Frontend
+cd frontend
+npm install
+cp .env.example .env.local      # set NEXT_PUBLIC_API_URL
+npm run dev
+
+# Backend (local invoke / tests)
+cd backend
+npm install
+# Set environment vars from .env.example in your shell or Lambda config
+sam build --no-cached
+sam local invoke AuthFunction -e events.json
 ```
 
-### Step 3.2: Amazon DynamoDB Tables Setup
-Create two DynamoDB tables with On-Demand capacity:
+Windows note: if `sam build` fails with long-path errors, set the temp dirs first:
 
-1. **Table 1: `ClouddocUsers`**
-   - **Partition Key**: `Email` (String)
-   - **Global Secondary Index (GSI)**:
-     - GSI Name: `UserIDIndex`
-     - Partition Key: `UserID` (String)
-     - Projection: `ALL`
+```powershell
+$env:TEMP='C:\tmp'; $env:TMP='C:\tmp'; sam build --no-cached
+```
 
-2. **Table 2: `DocumentsMetadata`**
-   - **Partition Key**: `DocumentID` (String)
-   - **Global Secondary Index (GSI)**:
-     - GSI Name: `OwnerIDIndex`
-     - Partition Key: `OwnerID` (String)
-     - Projection: `ALL`
+---
 
-### Step 3.3: Amazon SNS Topic Setup (per-user email routing)
-1. Open **Amazon SNS** > **Topics** > **Create topic**.
-2. **Type**: Standard
-3. **Name**: `CloudDocVault_Events`
-4. No manual subscription is required. Every user is subscribed automatically:
-   - On signup/login, `authHandler` calls `sns:Subscribe` for the user's own email.
-   - The subscription carries a **filter policy** on the `recipient` message attribute:
-     `{"recipient":["user@example.com"]}`
-   - Upload/share alerts are published with `recipient = <that user's email>`, so only that
-     user's subscription receives the email.
-5. Each user must click the AWS **Subscription Confirmation** email once. The dashboard shows
-   an amber banner until the subscription is confirmed (the "Check again" button re-checks it).
-6. Optional admin copy of *all* events: create an extra email subscription and **leave it
-   without a filter policy**. Note that SNS fan-out means that address will then receive every
-   upload/share alert.
+## 10. Deployment
 
-> SNS email subscriptions have no recipient field. Filter policies are what make per-user
-> routing possible on a single topic.
+**Backend (AWS SAM)**
 
-### Step 3.4: AWS Lambda Functions Setup
-Deploy the 6 handlers from the `backend/` directory using Node.js 22.x:
-- **authHandler**: `handlers/authHandler.handler`
-- **uploadHandler**: `handlers/uploadHandler.handler`
-- **getDocumentsHandler**: `handlers/getDocumentsHandler.handler`
-- **shareHandler**: `handlers/shareHandler.handler`
-- **openHandler**: `handlers/openHandler.handler`
-- **deleteHandler**: `handlers/deleteHandler.handler`
+```powershell
+cd backend
+$env:TEMP='C:\tmp'; $env:TMP='C:\tmp'
+sam build --no-cached
+sam deploy --no-confirm-changeset --no-fail-on-empty-changeset
+```
 
-### Step 3.5: Amazon API Gateway REST Setup
-1. Create a **REST API** named `CloudDocVaultAPI`.
-2. Add Resources:
-   - `/auth/signup` (POST &rarr; `authHandler`)
-   - `/auth/login` (POST &rarr; `authHandler`)
-   - `/auth/notifications` (GET &rarr; `authHandler`, returns the user's SNS confirmation state)
-   - `/documents` (GET &rarr; `getDocumentsHandler`, POST &rarr; `uploadHandler`)
-   - `/documents/share` (POST &rarr; `shareHandler`)
-   - `/documents/{documentId}` (DELETE &rarr; `deleteHandler`)
-   - `/documents/{documentId}/download` (GET &rarr; `openHandler`)
-3. Enable CORS on all resources.
-4. Under **API Settings**, add Binary Media Types: `multipart/form-data`, `application/octet-stream`.
-5. Deploy API to stage `prod`. Copy Invoke URL to `frontend/.env.local` as `NEXT_PUBLIC_API_URL`.
+`samconfig.toml` already holds the stack name, artifact bucket, region, and `CAPABILITY_IAM` (Lambda roles are created automatically from the SAM `Policies:` blocks).
+
+**Frontend (Vercel)**
+
+1. Import `Khan-ebadat/CloudDoc-Vault` into Vercel.
+2. Set **Root Directory** to `frontend`.
+3. Add environment variable:
+   ```
+   NEXT_PUBLIC_API_URL=https://5sdkgk80ul.execute-api.ap-south-1.amazonaws.com/prod
+   ```
+4. Deploy. Vercel auto-redeploys on every push to `main`.
+
+---
+
+## 11. Environment variables & secrets
+
+| File | Committed? | Contents |
+|---|---|---|
+| `backend/.env.example` | ✅ Yes | Placeholder variable names only |
+| `frontend/.env.example` | ✅ Yes | Public API URL |
+| `backend/.env` | ❌ Never | Real JWT secret, table/bucket names |
+| `frontend/.env.local` | ❌ Never | Real `NEXT_PUBLIC_API_URL` |
+| `~/.aws/credentials` | ❌ Never | AWS CLI access keys (outside the repo) |
+
+If a secret is ever committed, rotate it immediately (generate a new JWT secret and new AWS access keys) and purge it from history.
+
+---
+
+## 12. Troubleshooting
+
+| Symptom | Fix |
+|---|---|
+| `NEXT_PUBLIC_API_URL is not configured` | Add the env var in Vercel **before** building, then redeploy. |
+| `401 Unauthorized` | JWT missing/expired — log in again. |
+| `sam build` long-path error on Windows | Use `C:\tmp` for `TEMP`/`TMP` and keep `backend/.npmignore`. |
+| CSV/JSON downloads instead of opening | Expected for browsers without a renderer — preview now serves them as `text/plain`. |
+| SNS alert not received | Click the AWS subscription confirmation email; check the dashboard banner. |
+| Shared link 403 | Link expired or recipient not in `SharedWith` — ask the owner to re-share. |
+
+---
+
+## 13. Future scope
+
+- In-browser preview for DOCX/XLSX/PPTX via an external viewer.
+- S3 versioning and restore for overwritten files.
+- Link revocation and configurable per-link permissions.
+- Audit log dashboard for all open/share/delete events.
+- Resumable uploads for large files.
+- Replace account-ID-derived JWT secret with a dedicated Secrets Manager value.
+
+---
+
+*Built with Next.js 14, AWS SAM, S3, DynamoDB, SNS, and a lot of coffee.*

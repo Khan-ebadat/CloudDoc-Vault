@@ -5,6 +5,9 @@
   "main": "handlers/uploadHandler.js",
   "type": "module",
   "scripts": {
+    "build": "sam build",
+    "deploy": "sam build && sam deploy",
+    "logs": "sam logs --stack-name clouddoc-vault --tail",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "dependencies": {

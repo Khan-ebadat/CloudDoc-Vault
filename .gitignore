@@ -3,11 +3,13 @@ node_modules/
 .pnp
 .pnp.js
 
-# Next.js Build Outputs
+# Next.js / build outputs
 .next/
 out/
 build/
 dist/
+*.tsbuildinfo
+.aws-sam/
 
 # Logs
 npm-debug.log*
@@ -15,11 +17,25 @@ yarn-debug.log*
 yarn-error.log*
 .pnpm-debug.log*
 
-# Environment Variables
+# ---------------------------------------------------------------------------
+# Secrets & local credentials - NEVER commit these
+# ---------------------------------------------------------------------------
+# Real environment files (examples are explicitly re-included below)
 .env
-.env*.local
+.env.*
+!.env.example
+!.env.*.example
 
-# OS Metadata
-.DS_Store
+# AWS CLI / SDK credentials and keys
+.aws/
+credentials
 *.pem
+*.key
+*.p12
+*.pfx
+*.pkcs8
+*.asc
+
+# OS metadata
+.DS_Store
 Thumbs.db

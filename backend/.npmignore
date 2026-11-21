@@ -1,0 +1,7 @@
+# npm pack ignores .samignore — these must be excluded before packing
+.aws-sam
+frontend
+.git
+*.md
+.env
+.env.*

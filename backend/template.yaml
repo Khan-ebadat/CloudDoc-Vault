@@ -2,11 +2,20 @@ AWSTemplateFormatVersion: '2010-09-09'
 Transform: AWS::Serverless-2016-10-31
 Description: CloudDoc Vault - Production Serverless Backend (Auth, S3, DynamoDB, Lambda, SNS, API Gateway)
 
+Parameters:
+  NotificationEmail:
+    Type: String
+    Default: ''
+    Description: Email address that receives CloudDoc Vault upload alerts. Leave empty to skip.
+
+Conditions:
+  HasNotificationEmail: !Not [!Equals [!Ref NotificationEmail, '']]
+
 Globals:
   Function:
     Timeout: 30
     MemorySize: 512
-    Runtime: nodejs20.x
+    Runtime: nodejs22.x
     Architectures:
       - arm64
     Environment:
@@ -94,6 +103,21 @@ Resources:
       TopicName: CloudDocVault_Events
       DisplayName: "CloudDoc Vault Document Notification Alerts"
 
+  # 4b. Optional admin email subscription.
+  # Filtered to its own address so it only receives alerts addressed to it -
+  # every user gets their own subscription with the same filter shape.
+  DocumentEventsSubscription:
+    Type: AWS::SNS::Subscription
+    Condition: HasNotificationEmail
+    Properties:
+      TopicArn: !Ref DocumentEventsTopic
+      Protocol: email
+      Endpoint: !Ref NotificationEmail
+      FilterPolicy:
+        recipient:
+          - !Ref NotificationEmail
+      FilterPolicyScope: MessageAttributes
+
   # 5. Amazon API Gateway REST API
   VaultApiGateway:
     Type: AWS::Serverless::Api
@@ -116,6 +140,15 @@ Resources:
       Policies:
         - DynamoDBCrudPolicy:
             TableName: !Ref UsersTable
+        - Statement:
+            - Effect: Allow
+              Action:
+                - sns:Subscribe
+                - sns:GetSubscriptionAttributes
+                - sns:SetSubscriptionAttributes
+              Resource:
+                - !Ref DocumentEventsTopic
+                - !Sub "${DocumentEventsTopic}:*"
       Events:
         SignupApi:
           Type: Api
@@ -129,6 +162,12 @@ Resources:
             RestApiId: !Ref VaultApiGateway
             Path: /auth/login
             Method: POST
+        NotificationStatusApi:
+          Type: Api
+          Properties:
+            RestApiId: !Ref VaultApiGateway
+            Path: /auth/notifications
+            Method: GET
 
   UploadDocumentFunction:
     Type: AWS::Serverless::Function
@@ -176,6 +215,10 @@ Resources:
             BucketName: !Ref DocumentsBucket
         - DynamoDBCrudPolicy:
             TableName: !Ref DocumentsMetadataTable
+        - DynamoDBReadPolicy:
+            TableName: !Ref UsersTable
+        - SNSPublishMessagePolicy:
+            TopicName: !GetAtt DocumentEventsTopic.TopicName
       Events:
         ShareApi:
           Type: Api
@@ -183,6 +226,42 @@ Resources:
             RestApiId: !Ref VaultApiGateway
             Path: /documents/share
             Method: POST
+
+  OpenDocumentFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: .
+      Handler: handlers/openHandler.handler
+      Policies:
+        - S3ReadPolicy:
+            BucketName: !Ref DocumentsBucket
+        - DynamoDBReadPolicy:
+            TableName: !Ref DocumentsMetadataTable
+      Events:
+        OpenApi:
+          Type: Api
+          Properties:
+            RestApiId: !Ref VaultApiGateway
+            Path: /documents/{documentId}/download
+            Method: GET
+
+  DeleteDocumentFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: .
+      Handler: handlers/deleteHandler.handler
+      Policies:
+        - S3CrudPolicy:
+            BucketName: !Ref DocumentsBucket
+        - DynamoDBCrudPolicy:
+            TableName: !Ref DocumentsMetadataTable
+      Events:
+        DeleteApi:
+          Type: Api
+          Properties:
+            RestApiId: !Ref VaultApiGateway
+            Path: /documents/{documentId}
+            Method: DELETE
 
 Outputs:
   ApiEndpoint:

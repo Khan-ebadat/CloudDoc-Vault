@@ -1,0 +1,9 @@
+# Keep the Lambda deployment bundle small.
+# node_modules MUST stay included: the handlers need @aws-sdk/* at runtime.
+.git
+.aws-sam
+frontend
+node_modules/.cache
+.env
+.env.*
+*.md

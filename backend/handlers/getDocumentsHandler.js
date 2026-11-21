@@ -19,10 +19,17 @@ export const handler = async (event) => {
 
   try {
     const authUser = getAuthenticatedUser(event);
-    const currentUserId = authUser?.userId;
-    const currentUserEmail = authUser?.email;
+    if (!authUser?.userId) {
+      return {
+        statusCode: 401,
+        headers: CORS_HEADERS,
+        body: JSON.stringify({ error: 'Authentication required' }),
+      };
+    }
+    const currentUserId = authUser.userId;
+    const currentUserEmail = (authUser.email || '').toLowerCase();
 
-    console.log(`[DynamoDB] Scanning documents from ${TABLE_NAME} for user ${currentUserId || 'Public/Guest'}`);
+    console.log(`[DynamoDB] Scanning documents from ${TABLE_NAME} for user ${currentUserId}`);
     const scanCommand = new ScanCommand({
       TableName: TABLE_NAME,
       Limit: 200,
@@ -33,11 +40,11 @@ export const handler = async (event) => {
 
     // Filter documents: Owned by current user OR shared with current user
     const userDocs = allDocs.filter((doc) => {
-      if (!currentUserId) return true; // Default fallback for unauthenticated development view
-
       const isOwner = doc.OwnerID === currentUserId;
       const isSharedWithUser = Array.isArray(doc.SharedWith) && doc.SharedWith.some(
-        (share) => share.userId === currentUserId || share.email === currentUserEmail
+        (share) =>
+          share.userId === currentUserId ||
+          (share.email || '').toLowerCase() === currentUserEmail
       );
 
       return isOwner || isSharedWithUser;

@@ -3,9 +3,11 @@ import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import { GetCommand, UpdateCommand } from '@aws-sdk/lib-dynamodb';
 import { s3Client, docClient, CORS_HEADERS } from '../lib/awsClients.js';
 import { getAuthenticatedUser } from '../lib/authUtils.js';
+import { publishToRecipient } from '../lib/notifications.js';
 
 const BUCKET_NAME = process.env.DOCUMENTS_BUCKET_NAME || 'clouddoc-vault-documents';
 const TABLE_NAME = process.env.DOCUMENTS_TABLE_NAME || 'DocumentsMetadata';
+const USERS_TABLE = process.env.USERS_TABLE_NAME || 'ClouddocUsers';
 
 /**
  * Lambda handler for generating secure S3 Pre-Signed URLs (GET/PUT)
@@ -23,7 +25,14 @@ export const handler = async (event) => {
 
   try {
     const authUser = getAuthenticatedUser(event);
-    const callerId = authUser?.userId;
+    if (!authUser?.userId) {
+      return {
+        statusCode: 401,
+        headers: CORS_HEADERS,
+        body: JSON.stringify({ error: 'Authentication required' }),
+      };
+    }
+    const callerId = authUser.userId;
 
     if (!event.body) {
       return {
@@ -85,9 +94,13 @@ export const handler = async (event) => {
     // 3. Generate Pre-Signed URL with SigV4
     if (normalizedPerm === 'VIEW') {
       actionType = 'GET';
+      const originalContentType = doc.ContentType || 'application/octet-stream';
+      const isTextual = originalContentType.startsWith('text/') ||
+        ['application/csv', 'application/json', 'application/xml', 'application/javascript'].includes(originalContentType);
       const getCmd = new GetObjectCommand({
         Bucket: BUCKET_NAME,
         Key: s3Key,
+        ResponseContentType: isTextual ? 'text/plain; charset=utf-8' : originalContentType,
         ResponseContentDisposition: `inline; filename="${doc.FileName}"`,
       });
       preSignedUrl = await getSignedUrl(s3Client, getCmd, { expiresIn: sanitizedExpiry });
@@ -111,13 +124,34 @@ export const handler = async (event) => {
     const existingSharedWith = Array.isArray(doc.SharedWith) ? doc.SharedWith : [];
     let updatedSharedWith = [...existingSharedWith];
 
-    if (targetUserId) {
+    const rawTarget = String(targetUserId || '').trim();
+    let resolvedTargetId = rawTarget;
+    let targetEmail = '';
+
+    // Resolve an email recipient to their real UserID (if they have an account)
+    if (rawTarget.includes('@')) {
+      targetEmail = rawTarget.toLowerCase();
+      const targetUser = await docClient.send(new GetCommand({
+        TableName: USERS_TABLE,
+        Key: { Email: targetEmail },
+      }));
+      resolvedTargetId = targetUser.Item?.UserID || targetEmail;
+    }
+
+    if (rawTarget) {
       // Remove any previous entry for target user to update cleanly
-      updatedSharedWith = updatedSharedWith.filter((s) => s.userId !== targetUserId && s.email !== targetUserId);
+      updatedSharedWith = updatedSharedWith.filter(
+        (s) =>
+          s.userId !== resolvedTargetId &&
+          s.userId !== rawTarget &&
+          (s.email || '').toLowerCase() !== targetEmail
+      );
       updatedSharedWith.push({
-        userId: targetUserId,
+        userId: resolvedTargetId,
+        ...(targetEmail ? { email: targetEmail } : {}),
         permission: normalizedPerm,
-        sharedBy: callerId || 'Owner',
+        sharedBy: callerId,
+        sharedByName: authUser.fullName || 'Vault Owner',
         sharedAt: new Date().toISOString(),
       });
     }
@@ -132,6 +166,29 @@ export const handler = async (event) => {
         ':sharedWith': updatedSharedWith,
       },
     }));
+
+    // 5. Email the recipient. SNS routes this to targetEmail only, via the
+    //    subscription filter policy on the `recipient` message attribute.
+    if (targetEmail) {
+      const sharedAt = new Date().toISOString();
+      const notified = await publishToRecipient({
+        recipientEmail: targetEmail,
+        event: 'DOCUMENT_SHARED',
+        subject: `[CloudDoc Vault] ${authUser.fullName || 'A vault owner'} shared "${doc.FileName}" with you`,
+        payload: {
+          documentId,
+          fileName: doc.FileName,
+          permission: normalizedPerm,
+          sharedByName: authUser.fullName || 'Vault Owner',
+          sharedByEmail: authUser.email || '',
+          expiresInSeconds: sanitizedExpiry,
+          expiresAt: new Date(Date.now() + sanitizedExpiry * 1000).toISOString(),
+          sharedAt,
+          note: 'Sign in to CloudDoc Vault to open this document. For security, access links are not included in email.',
+        },
+      });
+      console.log(`[SNS] Share notification for ${targetEmail}: ${notified ? 'published' : 'skipped'}`);
+    }
 
     return {
       statusCode: 200,

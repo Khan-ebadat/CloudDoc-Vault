@@ -1,9 +1,73 @@
-import { GetCommand, PutCommand } from '@aws-sdk/lib-dynamodb';
+import { GetCommand, PutCommand, UpdateCommand } from '@aws-sdk/lib-dynamodb';
 import { randomUUID } from 'crypto';
 import { docClient, CORS_HEADERS } from '../lib/awsClients.js';
-import { hashPassword, verifyPassword, generateToken } from '../lib/authUtils.js';
+import { hashPassword, verifyPassword, generateToken, getAuthenticatedUser } from '../lib/authUtils.js';
+import {
+  subscribeEmail,
+  refreshSubscription,
+  normalizeEmail,
+  NotificationStatus,
+} from '../lib/notifications.js';
 
 const USERS_TABLE = process.env.USERS_TABLE_NAME || 'ClouddocUsers';
+
+/**
+ * Store the per-user email notification state on the ClouddocUsers record so
+ * later logins can report it without re-sending confirmation emails.
+ */
+async function persistNotificationState(email, state) {
+  const values = {
+    ':notificationEmail': state.email || email,
+    ':notificationStatus': state.status || NotificationStatus.UNKNOWN,
+    ':now': new Date().toISOString(),
+  };
+
+  let updateExpression =
+    'SET NotificationEmail = :notificationEmail, NotificationStatus = :notificationStatus, UpdatedAt = :now';
+
+  if (state.subscriptionArn) {
+    updateExpression += ', NotificationSubscriptionArn = :notificationSubscriptionArn';
+    values[':notificationSubscriptionArn'] = state.subscriptionArn;
+  }
+
+  try {
+    await docClient.send(
+      new UpdateCommand({
+        TableName: USERS_TABLE,
+        Key: { Email: email },
+        UpdateExpression: updateExpression,
+        ExpressionAttributeValues: values,
+      })
+    );
+  } catch (error) {
+    console.warn('[AuthHandler] Could not persist notification state:', error.message);
+  }
+}
+
+/**
+ * Resolve the notification state for a user:
+ *  - reuse a known subscription (confirmed or pending), or
+ *  - create a new filtered email subscription (sends one AWS confirmation mail).
+ */
+async function resolveNotificationState(user) {
+  const email = normalizeEmail(user.Email);
+
+  if (!email) {
+    return { email: '', status: NotificationStatus.DISABLED };
+  }
+
+  if (user.NotificationSubscriptionArn) {
+    const current = await refreshSubscription(user.NotificationSubscriptionArn, email);
+    if (
+      current.status === NotificationStatus.CONFIRMED ||
+      current.status === NotificationStatus.PENDING
+    ) {
+      return current;
+    }
+  }
+
+  return subscribeEmail(email);
+}
 
 /**
  * Lambda handler for User Authentication: Signup & Login
@@ -27,6 +91,43 @@ export const handler = async (event) => {
   }
 
   try {
+    // ==========================================
+    // 0. NOTIFICATION STATUS (GET /auth/notifications)
+    // ==========================================
+    if (event.httpMethod === 'GET' && event.path?.endsWith('/notifications')) {
+      const authUser = getAuthenticatedUser(event);
+      if (!authUser?.email) {
+        return {
+          statusCode: 401,
+          headers: CORS_HEADERS,
+          body: JSON.stringify({ error: 'Authentication required' }),
+        };
+      }
+
+      const email = normalizeEmail(authUser.email);
+      const userResult = await docClient.send(new GetCommand({
+        TableName: USERS_TABLE,
+        Key: { Email: email },
+      }));
+
+      if (!userResult.Item) {
+        return {
+          statusCode: 404,
+          headers: CORS_HEADERS,
+          body: JSON.stringify({ error: 'User account not found' }),
+        };
+      }
+
+      const notifications = await resolveNotificationState(userResult.Item);
+      await persistNotificationState(email, notifications);
+
+      return {
+        statusCode: 200,
+        headers: CORS_HEADERS,
+        body: JSON.stringify({ notifications }),
+      };
+    }
+
     if (!event.body) {
       return {
         statusCode: 400,
@@ -89,6 +190,11 @@ export const handler = async (event) => {
         Item: newUserItem,
       }));
 
+      // Subscribe this address to its own filtered notifications.
+      // The user must click the AWS confirmation email once before alerts arrive.
+      const notifications = await subscribeEmail(normalizedEmail);
+      await persistNotificationState(normalizedEmail, notifications);
+
       const token = generateToken({
         userId,
         email: normalizedEmail,
@@ -107,6 +213,7 @@ export const handler = async (event) => {
             email: normalizedEmail,
             fullName: newUserItem.FullName,
             role: newUserItem.Role,
+            notifications,
           },
         }),
       };
@@ -158,6 +265,10 @@ export const handler = async (event) => {
       role: user.Role || 'STANDARD_USER',
     });
 
+    // Re-check (or create) this user's filtered email subscription on login.
+    const notifications = await resolveNotificationState(user);
+    await persistNotificationState(user.Email, notifications);
+
     return {
       statusCode: 200,
       headers: CORS_HEADERS,
@@ -169,6 +280,7 @@ export const handler = async (event) => {
           email: user.Email,
           fullName: user.FullName,
           role: user.Role || 'STANDARD_USER',
+          notifications,
         },
       }),
     };

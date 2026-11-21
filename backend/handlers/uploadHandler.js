@@ -1,13 +1,12 @@
 import { PutObjectCommand } from '@aws-sdk/client-s3';
 import { PutCommand } from '@aws-sdk/lib-dynamodb';
-import { PublishCommand } from '@aws-sdk/client-sns';
 import { randomUUID } from 'crypto';
-import { s3Client, docClient, snsClient, CORS_HEADERS } from '../lib/awsClients.js';
+import { s3Client, docClient, CORS_HEADERS } from '../lib/awsClients.js';
 import { getAuthenticatedUser } from '../lib/authUtils.js';
+import { publishToRecipient } from '../lib/notifications.js';
 
 const BUCKET_NAME = process.env.DOCUMENTS_BUCKET_NAME || 'clouddoc-vault-documents';
 const TABLE_NAME = process.env.DOCUMENTS_TABLE_NAME || 'DocumentsMetadata';
-const TOPIC_ARN = process.env.SNS_TOPIC_ARN || '';
 
 /**
  * Lambda handler for uploading documents under user-specific S3 prefixes,
@@ -26,9 +25,16 @@ export const handler = async (event) => {
   try {
     // 1. Authenticate user from JWT token
     const authUser = getAuthenticatedUser(event);
-    const ownerId = authUser?.userId || 'usr_anonymous';
-    const ownerName = authUser?.fullName || 'System User';
-    const ownerEmail = authUser?.email || 'admin@vault.local';
+    if (!authUser?.userId) {
+      return {
+        statusCode: 401,
+        headers: CORS_HEADERS,
+        body: JSON.stringify({ error: 'Authentication required' }),
+      };
+    }
+    const ownerId = authUser.userId;
+    const ownerName = authUser.fullName || 'System User';
+    const ownerEmail = authUser.email || 'admin@vault.local';
 
     if (!event.body) {
       return {
@@ -99,23 +105,22 @@ export const handler = async (event) => {
       Item: documentRecord,
     }));
 
-    // 4. Publish SNS Event Notification
-    if (TOPIC_ARN) {
-      console.log(`[SNS] Triggering event alert to ${TOPIC_ARN}`);
-      await snsClient.send(new PublishCommand({
-        TopicArn: TOPIC_ARN,
-        Subject: `[CloudDoc Vault] File Uploaded: ${fileName}`,
-        Message: JSON.stringify({
-          event: 'DOCUMENT_UPLOADED',
-          documentId,
-          fileName,
-          fileSize: `${(actualSize / 1024).toFixed(2)} KB`,
-          ownerId,
-          ownerName,
-          timestamp: uploadTimestamp,
-        }, null, 2),
-      }));
-    }
+    // 4. Email an upload receipt to the person who uploaded the file.
+    //    The SNS subscription filter routes this message to ownerEmail only.
+    const notified = await publishToRecipient({
+      recipientEmail: ownerEmail,
+      event: 'DOCUMENT_UPLOADED',
+      subject: `[CloudDoc Vault] File uploaded: ${fileName}`,
+      payload: {
+        documentId,
+        fileName,
+        fileSize: `${(actualSize / 1024).toFixed(2)} KB`,
+        ownerId,
+        ownerName,
+        timestamp: uploadTimestamp,
+      },
+    });
+    console.log(`[SNS] Upload notification for ${ownerEmail}: ${notified ? 'published' : 'skipped'}`);
 
     return {
       statusCode: 201,
