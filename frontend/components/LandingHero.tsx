@@ -22,13 +22,19 @@ import {
 } from 'lucide-react';
 
 interface LandingHeroProps {
-  onAuthSuccess: (user: UserSession) => void;
+  onAuthSuccess: (user: UserSession, email: string, password: string) => void;
+  initialEmail?: string;
+  initialPassword?: string;
 }
 
-export const LandingHero: React.FC<LandingHeroProps> = ({ onAuthSuccess }) => {
+export const LandingHero: React.FC<LandingHeroProps> = ({
+  onAuthSuccess,
+  initialEmail = '',
+  initialPassword = '',
+}) => {
   const [authMode, setAuthMode] = useState<'LOGIN' | 'SIGNUP'>('LOGIN');
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
+  const [email, setEmail] = useState(initialEmail);
+  const [password, setPassword] = useState(initialPassword);
   const [showPassword, setShowPassword] = useState(false);
   const [fullName, setFullName] = useState('');
   const [isLoading, setIsLoading] = useState(false);
@@ -42,10 +48,10 @@ export const LandingHero: React.FC<LandingHeroProps> = ({ onAuthSuccess }) => {
     try {
       if (authMode === 'SIGNUP') {
         const res = await signupUser(email, password, fullName);
-        onAuthSuccess(res.user);
+        onAuthSuccess(res.user, email, password);
       } else {
         const res = await loginUser(email, password);
-        onAuthSuccess(res.user);
+        onAuthSuccess(res.user, email, password);
       }
     } catch (err: any) {
       setErrorMessage(err.message || 'Authentication failed. Please verify credentials.');

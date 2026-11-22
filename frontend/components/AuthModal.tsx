@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { loginUser, signupUser } from '../lib/api';
 import { UserSession } from '../lib/types';
 import { X, Lock, Mail, User, ShieldCheck, Loader2, AlertCircle, ArrowRight, Eye, EyeOff } from 'lucide-react';
@@ -8,8 +8,10 @@ import { X, Lock, Mail, User, ShieldCheck, Loader2, AlertCircle, ArrowRight, Eye
 interface AuthModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onAuthSuccess: (user: UserSession) => void;
+  onAuthSuccess: (user: UserSession, email: string, password: string) => void;
   initialMode?: 'LOGIN' | 'SIGNUP';
+  initialEmail?: string;
+  initialPassword?: string;
 }
 
 export const AuthModal: React.FC<AuthModalProps> = ({
@@ -17,14 +19,25 @@ export const AuthModal: React.FC<AuthModalProps> = ({
   onClose,
   onAuthSuccess,
   initialMode = 'LOGIN',
+  initialEmail = '',
+  initialPassword = '',
 }) => {
   const [mode, setMode] = useState<'LOGIN' | 'SIGNUP'>(initialMode);
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
+  const [email, setEmail] = useState(initialEmail);
+  const [password, setPassword] = useState(initialPassword);
   const [showPassword, setShowPassword] = useState(false);
   const [fullName, setFullName] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+
+  // The modal stays mounted while logged in, so refresh the fields each time
+  // it opens with the credentials carried over from the last sign in.
+  useEffect(() => {
+    if (isOpen) {
+      setEmail(initialEmail);
+      setPassword(initialPassword);
+    }
+  }, [isOpen, initialEmail, initialPassword]);
 
   if (!isOpen) return null;
 
@@ -36,11 +49,11 @@ export const AuthModal: React.FC<AuthModalProps> = ({
     try {
       if (mode === 'SIGNUP') {
         const response = await signupUser(email, password, fullName);
-        onAuthSuccess(response.user);
+        onAuthSuccess(response.user, email, password);
         onClose();
       } else {
         const response = await loginUser(email, password);
-        onAuthSuccess(response.user);
+        onAuthSuccess(response.user, email, password);
         onClose();
       }
     } catch (err: any) {

@@ -9,10 +9,16 @@ import { UploadModal } from '../components/UploadModal';
 import { ShareModal } from '../components/ShareModal';
 import { AuthModal } from '../components/AuthModal';
 import { DeleteConfirmModal } from '../components/DeleteConfirmModal';
+import { LogoutConfirmModal } from '../components/LogoutConfirmModal';
 import { NotificationBanner } from '../components/NotificationBanner';
 import { DocumentItem, StorageMetrics, UserSession } from '../lib/types';
 import { fetchDocuments, getStoredUser, clearSession, deleteDocument, getOpenUrl, refreshNotificationStatus } from '../lib/api';
 import { RefreshCw, Loader2, CheckCircle2, AlertCircle } from 'lucide-react';
+
+interface RememberedCredentials {
+  email: string;
+  password: string;
+}
 
 export default function AppRootPage() {
   const [currentUser, setCurrentUser] = useState<UserSession | null>(null);
@@ -29,6 +35,8 @@ export default function AppRootPage() {
   const [isDeleting, setIsDeleting] = useState<boolean>(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
   const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
+  const [isLogoutConfirmOpen, setIsLogoutConfirmOpen] = useState<boolean>(false);
+  const [rememberedCredentials, setRememberedCredentials] = useState<RememberedCredentials | null>(null);
   const [notificationsDismissed, setNotificationsDismissed] = useState<boolean>(false);
   const [isRefreshingNotifications, setIsRefreshingNotifications] = useState<boolean>(false);
 
@@ -86,16 +94,25 @@ export default function AppRootPage() {
     };
   }, [currentUser]);
 
-  // Handle Logout: Clears storage & session, returns to Home/Landing page immediately
-  const handleLogout = () => {
+  // Sign Out is a two-step action: ask first, then clear storage and return home
+  const handleLogoutRequest = () => setIsLogoutConfirmOpen(true);
+
+  const handleLogoutConfirm = () => {
     clearSession();
     setCurrentUser(null);
     setDocuments([]);
     setMetrics(null);
+    setIsLogoutConfirmOpen(false);
+    setUploadModalOpen(false);
+    setAuthModalOpen(false);
+    setShareModalDoc(null);
+    setDeleteTarget(null);
   };
 
-  // Handle Auth Success from Hero card or Auth Modal
-  const handleAuthSuccess = (user: UserSession) => {
+  // Handle Auth Success from Hero card or Auth Modal. Credentials are kept in
+  // memory only so they can pre-fill the form after sign out - never stored.
+  const handleAuthSuccess = (user: UserSession, email: string, password: string) => {
+    setRememberedCredentials({ email, password });
     setCurrentUser(user);
     loadVaultData();
   };
@@ -198,7 +215,7 @@ export default function AppRootPage() {
           }
         }}
         onOpenAuth={() => setAuthModalOpen(true)}
-        onLogout={handleLogout}
+        onLogout={handleLogoutRequest}
       />
 
       {/* Main Content Area */}
@@ -207,7 +224,11 @@ export default function AppRootPage() {
           /* ======================================================== */
           /* 1. FIRST VISIT / LOGGED OUT: HOME & AUTH LANDING PAGE    */
           /* ======================================================== */
-          <LandingHero onAuthSuccess={handleAuthSuccess} />
+          <LandingHero
+            onAuthSuccess={handleAuthSuccess}
+            initialEmail={rememberedCredentials?.email}
+            initialPassword={rememberedCredentials?.password}
+          />
         ) : (
           /* ======================================================== */
           /* 2. AUTHENTICATED: SECURITY VAULT DASHBOARD               */
@@ -312,6 +333,16 @@ export default function AppRootPage() {
         isOpen={authModalOpen}
         onClose={() => setAuthModalOpen(false)}
         onAuthSuccess={handleAuthSuccess}
+        initialEmail={rememberedCredentials?.email}
+        initialPassword={rememberedCredentials?.password}
+      />
+
+      {/* Sign Out Confirmation Modal */}
+      <LogoutConfirmModal
+        isOpen={isLogoutConfirmOpen}
+        userEmail={currentUser?.email}
+        onClose={() => setIsLogoutConfirmOpen(false)}
+        onConfirm={handleLogoutConfirm}
       />
 
       {/* Delete Confirmation Modal */}
