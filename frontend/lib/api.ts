@@ -1,6 +1,6 @@
 import { DocumentItem, StorageMetrics, ShareRequest, ShareResponse, AuthResponse, UserSession, OpenDocumentResponse, EmailNotificationState } from './types';
 
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || '';
+const API_BASE_URL = process.env.NEXT_API_URL || '';
 
 export const AUTH_TOKEN_KEY = 'clouddoc_auth_token';
 export const AUTH_USER_KEY = 'clouddoc_auth_user';
@@ -35,7 +35,7 @@ export function clearSession(): void {
 
 function requireApiUrl(): string {
   if (!API_BASE_URL) {
-    throw new Error('NEXT_PUBLIC_API_URL is not configured.');
+    throw new Error('NEXT_API_URL is not configured.');
   }
   return API_BASE_URL;
 }

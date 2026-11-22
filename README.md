@@ -191,7 +191,7 @@ All routes are under the API Gateway base URL. Protected routes require `Authori
 # Frontend
 cd frontend
 npm install
-cp .env.example .env.local      # set NEXT_PUBLIC_API_URL
+cp .env.example .env.local      # set NEXT_API_URL
 npm run dev
 
 # Backend (local invoke / tests)
@@ -229,7 +229,7 @@ sam deploy --no-confirm-changeset --no-fail-on-empty-changeset
 2. Set **Root Directory** to `frontend`.
 3. Add environment variable:
    ```
-   NEXT_PUBLIC_API_URL=https://5sdkgk80ul.execute-api.ap-south-1.amazonaws.com/prod
+   NEXT_API_URL=https://5sdkgk80ul.execute-api.ap-south-1.amazonaws.com/prod
    ```
 4. Deploy. Vercel auto-redeploys on every push to `main`.
 
@@ -242,7 +242,7 @@ sam deploy --no-confirm-changeset --no-fail-on-empty-changeset
 | `backend/.env.example` | ✅ Yes | Placeholder variable names only |
 | `frontend/.env.example` | ✅ Yes | Public API URL |
 | `backend/.env` | ❌ Never | Real JWT secret, table/bucket names |
-| `frontend/.env.local` | ❌ Never | Real `NEXT_PUBLIC_API_URL` |
+| `frontend/.env.local` | ❌ Never | Real `NEXT_API_URL` |
 | `~/.aws/credentials` | ❌ Never | AWS CLI access keys (outside the repo) |
 
 If a secret is ever committed, rotate it immediately (generate a new JWT secret and new AWS access keys) and purge it from history.
@@ -253,7 +253,7 @@ If a secret is ever committed, rotate it immediately (generate a new JWT secret 
 
 | Symptom | Fix |
 |---|---|
-| `NEXT_PUBLIC_API_URL is not configured` | Add the env var in Vercel **before** building, then redeploy. |
+| `NEXT_API_URL is not configured` | Add the env var in Vercel **before** building, then redeploy. |
 | `401 Unauthorized` | JWT missing/expired — log in again. |
 | `sam build` long-path error on Windows | Use `C:\tmp` for `TEMP`/`TMP` and keep `backend/.npmignore`. |
 | CSV/JSON downloads instead of opening | Expected for browsers without a renderer — preview now serves them as `text/plain`. |
