@@ -3,9 +3,9 @@ import { randomBytes } from 'crypto';
 import { docClient, CORS_HEADERS } from '../lib/awsClients.js';
 import { getAuthenticatedUser } from '../lib/authUtils.js';
 import { publishToRecipient } from '../lib/notifications.js';
+import { resolveRecipientAccount } from '../lib/shareRecipient.js';
 
 const TABLE_NAME = process.env.DOCUMENTS_TABLE_NAME || 'DocumentsMetadata';
-const USERS_TABLE = process.env.USERS_TABLE_NAME || 'ClouddocUsers';
 const SHARE_LINKS_TABLE = process.env.SHARE_LINKS_TABLE_NAME || 'ShareLinks';
 const FRONTEND_BASE_URL = (process.env.FRONTEND_BASE_URL || 'http://localhost:3000').replace(/\/$/, '');
 
@@ -36,10 +36,12 @@ async function createShortShareCode(item, maxAttempts = 5) {
 }
 
 /**
- * Lambda handler for generating secure S3 Pre-Signed URLs (GET/PUT)
- * and managing granular document sharing permissions per User ID in DynamoDB.
+ * Create a short, recipient-restricted share link.
+ *
+ * The S3 URL is deliberately NOT created here: the recipient's signed-in
+ * identity is checked by resolveShareHandler before any URL is generated.
  */
-export const handler = async (event) => {
+export async function createShare(event, dependencies = {}) {
   // Handle CORS Preflight
   if (event.httpMethod === 'OPTIONS') {
     return {
@@ -48,6 +50,11 @@ export const handler = async (event) => {
       body: JSON.stringify({ message: 'Preflight OK' }),
     };
   }
+
+  const client = dependencies.docClient || docClient;
+  const publish = dependencies.publishToRecipient || publishToRecipient;
+  const createCode = dependencies.createShortShareCode || createShortShareCode;
+  const currentTime = dependencies.now ? dependencies.now() : new Date();
 
   try {
     const authUser = getAuthenticatedUser(event);
@@ -69,7 +76,17 @@ export const handler = async (event) => {
     }
 
     const payload = typeof event.body === 'string' ? JSON.parse(event.body) : event.body;
-    const { documentId, permission = 'VIEW', expiresIn = 3600, targetUserId = '' } = payload;
+    const {
+      documentId,
+      permission = 'VIEW',
+      expiresIn = 3600,
+      recipient = '',
+      targetUserId = '',
+      recipientEmail = '',
+    } = payload;
+    // `targetUserId` is accepted for existing clients; `recipient` is the
+    // preferred name. All forms must identify a real CloudDoc Vault account.
+    const rawRecipient = String(recipient || targetUserId || recipientEmail || '').trim();
 
     if (!documentId) {
       return {
@@ -79,8 +96,16 @@ export const handler = async (event) => {
       };
     }
 
+    if (!rawRecipient) {
+      return {
+        statusCode: 400,
+        headers: CORS_HEADERS,
+        body: JSON.stringify({ error: 'Missing required field: recipient' }),
+      };
+    }
+
     // 1. Fetch document metadata from DynamoDB 'DocumentsMetadata'
-    const getResult = await docClient.send(new GetCommand({
+    const getResult = await client.send(new GetCommand({
       TableName: TABLE_NAME,
       Key: { DocumentID: documentId },
     }));
@@ -123,44 +148,35 @@ export const handler = async (event) => {
     }
     const actionType = 'GET';
 
+    // 3. Resolve the recipient: links can only be shared with an existing
+    //    CloudDoc Vault account, never with a bare/tokenized identifier.
+    const account = await resolveRecipientAccount(rawRecipient, client);
+    if (!account) {
+      return {
+        statusCode: 404,
+        headers: CORS_HEADERS,
+        body: JSON.stringify({ error: 'Recipient account not found' }),
+      };
+    }
+
     // 4. Update SharedWith array in DynamoDB
     const existingSharedWith = Array.isArray(doc.SharedWith) ? doc.SharedWith : [];
-    let updatedSharedWith = [...existingSharedWith];
+    const updatedSharedWith = existingSharedWith.filter(
+      (s) =>
+        s.userId !== account.userId &&
+        (s.email || '').toLowerCase() !== account.email
+    );
+    updatedSharedWith.push({
+      userId: account.userId,
+      email: account.email,
+      permission: normalizedPerm,
+      sharedBy: callerId,
+      sharedByName: authUser.fullName || 'Vault Owner',
+      sharedAt: currentTime.toISOString(),
+    });
 
-    const rawTarget = String(targetUserId || '').trim();
-    let resolvedTargetId = rawTarget;
-    let targetEmail = '';
-
-    // Resolve an email recipient to their real UserID (if they have an account)
-    if (rawTarget.includes('@')) {
-      targetEmail = rawTarget.toLowerCase();
-      const targetUser = await docClient.send(new GetCommand({
-        TableName: USERS_TABLE,
-        Key: { Email: targetEmail },
-      }));
-      resolvedTargetId = targetUser.Item?.UserID || targetEmail;
-    }
-
-    if (rawTarget) {
-      // Remove any previous entry for target user to update cleanly
-      updatedSharedWith = updatedSharedWith.filter(
-        (s) =>
-          s.userId !== resolvedTargetId &&
-          s.userId !== rawTarget &&
-          (s.email || '').toLowerCase() !== targetEmail
-      );
-      updatedSharedWith.push({
-        userId: resolvedTargetId,
-        ...(targetEmail ? { email: targetEmail } : {}),
-        permission: normalizedPerm,
-        sharedBy: callerId,
-        sharedByName: authUser.fullName || 'Vault Owner',
-        sharedAt: new Date().toISOString(),
-      });
-    }
-
-    const nowIso = new Date().toISOString();
-    await docClient.send(new UpdateCommand({
+    const nowIso = currentTime.toISOString();
+    await client.send(new UpdateCommand({
       TableName: TABLE_NAME,
       Key: { DocumentID: documentId },
       UpdateExpression: 'SET SharedStatus = :sharedStatus, LastSharedAt = :sharedAt, SharedWith = :sharedWith',
@@ -171,43 +187,47 @@ export const handler = async (event) => {
       },
     }));
 
-    const expiresAtEpoch = Math.floor(Date.now() / 1000) + sanitizedExpiry;
+    const expiresAtEpoch = Math.floor(currentTime.getTime() / 1000) + sanitizedExpiry;
     const expiresAt = new Date(expiresAtEpoch * 1000).toISOString();
-    const shareCode = await createShortShareCode({
+    const shareCode = await createCode({
       DocumentID: documentId,
       OwnerID: doc.OwnerID,
       FileName: doc.FileName,
       Permission: normalizedPerm,
       CreatedBy: callerId,
       CreatedByEmail: authUser.email || '',
-      TargetUserId: rawTarget || '',
+      // Explicit recipient fields are authoritative at resolution time.
+      RecipientUserId: account.userId,
+      RecipientEmail: account.email,
+      // Kept for backwards compatibility with existing consumers of the
+      // share-link record; now always the resolved account ID / email.
+      TargetUserId: account.userId,
+      TargetEmail: account.email,
       CreatedAt: nowIso,
       ExpiresAt: expiresAt,
       ExpiresAtEpoch: expiresAtEpoch,
     });
     const shareUrl = `${FRONTEND_BASE_URL}/s/${shareCode}`;
 
-    // 5. Email the recipient. SNS routes this to targetEmail only.
-    if (targetEmail) {
-      const notified = await publishToRecipient({
-        recipientEmail: targetEmail,
-        event: 'DOCUMENT_SHARED',
-        subject: `[CloudDoc Vault] ${authUser.fullName || 'A vault owner'} shared "${doc.FileName}" with you`,
-        payload: {
-          documentId,
-          fileName: doc.FileName,
-          permission: normalizedPerm,
-          sharedByName: authUser.fullName || 'Vault Owner',
-          sharedByEmail: authUser.email || '',
-          expiresInSeconds: sanitizedExpiry,
-          expiresAt,
-          sharedAt: nowIso,
-          shareUrl,
-          note: 'Use the share link to open this document. The link will expire at the time shown above.',
-        },
-      });
-      console.log(`[SNS] Share notification for ${targetEmail}: ${notified ? 'published' : 'skipped'}`);
-    }
+    // 5. Email the recipient. SNS routes this to the verified account email.
+    const notified = await publish({
+      recipientEmail: account.email,
+      event: 'DOCUMENT_SHARED',
+      subject: `[CloudDoc Vault] ${authUser.fullName || 'A vault owner'} shared "${doc.FileName}" with you`,
+      payload: {
+        documentId,
+        fileName: doc.FileName,
+        permission: normalizedPerm,
+        sharedByName: authUser.fullName || 'Vault Owner',
+        sharedByEmail: authUser.email || '',
+        expiresInSeconds: sanitizedExpiry,
+        expiresAt,
+        sharedAt: nowIso,
+        shareUrl,
+        note: 'Sign in to CloudDoc Vault with your account, then open this link to view the document.',
+      },
+    });
+    console.log(`[SNS] Share notification for ${account.email}: ${notified ? 'published' : 'skipped'}`);
 
     return {
       statusCode: 200,
@@ -217,7 +237,8 @@ export const handler = async (event) => {
         documentId,
         fileName: doc.FileName,
         permission: normalizedPerm,
-        targetUserId: targetUserId || 'Public/Tokenized',
+        targetUserId: account.userId,
+        targetEmail: account.email,
         httpMethod: actionType,
         expiresInSeconds: sanitizedExpiry,
         expiresAt,
@@ -229,7 +250,9 @@ export const handler = async (event) => {
     return {
       statusCode: 500,
       headers: CORS_HEADERS,
-      body: JSON.stringify({ error: 'Failed to generate pre-signed link', details: error.message }),
+      body: JSON.stringify({ error: 'Failed to generate share link', details: error.message }),
     };
   }
-};
+}
+
+export const handler = async (event) => createShare(event);

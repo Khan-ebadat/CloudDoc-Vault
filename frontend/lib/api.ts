@@ -40,6 +40,17 @@ function requireApiUrl(): string {
   return API_BASE_URL;
 }
 
+/** Carries the resolver status so the share page can show a sign-in flow. */
+export class ShareLinkError extends Error {
+  readonly status: number;
+
+  constructor(message: string, status: number) {
+    super(message);
+    this.name = 'ShareLinkError';
+    this.status = status;
+  }
+}
+
 export async function loginUser(email: string, password: string): Promise<AuthResponse> {
   const response = await fetch(`${requireApiUrl()}/auth/login`, {
     method: 'POST',
@@ -204,14 +215,24 @@ export async function generateShareUrl(params: ShareRequest): Promise<ShareRespo
 }
 
 export async function resolveShareLink(code: string): Promise<OpenDocumentResponse> {
+  // The backend derives the recipient from this JWT. We never send a
+  // recipient identity as a query parameter or request body.
+  const token = getStoredToken();
+  const headers: Record<string, string> = {};
+  if (token) headers.Authorization = `Bearer ${token}`;
+
   const response = await fetch(`${requireApiUrl()}/share/${encodeURIComponent(code)}`, {
     method: 'GET',
+    headers,
     cache: 'no-store',
   });
 
   if (!response.ok) {
     const errorData = await response.json().catch(() => ({}));
-    throw new Error(errorData.error || `Failed to resolve share link (${response.status})`);
+    throw new ShareLinkError(
+      errorData.error || `Failed to resolve share link (${response.status})`,
+      response.status
+    );
   }
 
   return response.json();

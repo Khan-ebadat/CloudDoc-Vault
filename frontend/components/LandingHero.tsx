@@ -250,7 +250,7 @@ export const LandingHero: React.FC<LandingHeroProps> = ({
           </div>
           <h3 className="font-bold text-slate-900 dark:text-white text-sm mb-1.5">Ephemeral SigV4 Signed URLs</h3>
           <p className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed">
-            Generate time-bounded GET (view) or PUT (upload/overwrite) links valid from 15 minutes to 7 days, targeted to specific recipient user IDs.
+            Recipient-only, view-only short links valid from 15 minutes to 7 days; each open issues a fresh signed GET URL capped at 60 seconds.
           </p>
         </div>
 

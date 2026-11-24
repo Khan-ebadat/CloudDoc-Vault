@@ -8,7 +8,7 @@
     "build": "sam build",
     "deploy": "sam build && sam deploy",
     "logs": "sam logs --stack-name clouddoc-vault --tail",
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "node --test test/*.test.js"
   },
   "dependencies": {
     "@aws-sdk/client-dynamodb": "^3.600.0",

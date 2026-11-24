@@ -12,6 +12,8 @@ interface AuthModalProps {
   initialMode?: 'LOGIN' | 'SIGNUP';
   initialEmail?: string;
   initialPassword?: string;
+  /** Set false on flows (such as share links) where only sign-in is valid. */
+  allowSignup?: boolean;
 }
 
 export const AuthModal: React.FC<AuthModalProps> = ({
@@ -21,8 +23,9 @@ export const AuthModal: React.FC<AuthModalProps> = ({
   initialMode = 'LOGIN',
   initialEmail = '',
   initialPassword = '',
+  allowSignup = true,
 }) => {
-  const [mode, setMode] = useState<'LOGIN' | 'SIGNUP'>(initialMode);
+  const [mode, setMode] = useState<'LOGIN' | 'SIGNUP'>(allowSignup ? initialMode : 'LOGIN');
   const [email, setEmail] = useState(initialEmail);
   const [password, setPassword] = useState(initialPassword);
   const [showPassword, setShowPassword] = useState(false);
@@ -47,7 +50,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
     setIsLoading(true);
 
     try {
-      if (mode === 'SIGNUP') {
+      if (allowSignup && mode === 'SIGNUP') {
         const response = await signupUser(email, password, fullName);
         onAuthSuccess(response.user, email, password);
         onClose();
@@ -90,34 +93,36 @@ export const AuthModal: React.FC<AuthModalProps> = ({
         </div>
 
         {/* Tab Switcher */}
-        <div className="grid grid-cols-2 gap-2 mt-4 p-1 rounded-xl bg-slate-100 dark:bg-slate-900 border border-slate-200 dark:border-slate-800">
-          <button
-            type="button"
-            onClick={() => { setMode('LOGIN'); setErrorMessage(null); }}
-            className={`py-2 text-xs font-bold rounded-lg transition-all ${
-              mode === 'LOGIN'
-                ? 'bg-white dark:bg-slate-800 text-cyan-600 dark:text-cyan-400 shadow-sm'
-                : 'text-slate-500 dark:text-slate-400 hover:text-slate-700'
-            }`}
-          >
-            Sign In
-          </button>
-          <button
-            type="button"
-            onClick={() => { setMode('SIGNUP'); setErrorMessage(null); }}
-            className={`py-2 text-xs font-bold rounded-lg transition-all ${
-              mode === 'SIGNUP'
-                ? 'bg-white dark:bg-slate-800 text-cyan-600 dark:text-cyan-400 shadow-sm'
-                : 'text-slate-500 dark:text-slate-400 hover:text-slate-700'
-            }`}
-          >
-            Create Account
-          </button>
-        </div>
+        {allowSignup && (
+          <div className="grid grid-cols-2 gap-2 mt-4 p-1 rounded-xl bg-slate-100 dark:bg-slate-900 border border-slate-200 dark:border-slate-800">
+            <button
+              type="button"
+              onClick={() => { setMode('LOGIN'); setErrorMessage(null); }}
+              className={`py-2 text-xs font-bold rounded-lg transition-all ${
+                mode === 'LOGIN'
+                  ? 'bg-white dark:bg-slate-800 text-cyan-600 dark:text-cyan-400 shadow-sm'
+                  : 'text-slate-500 dark:text-slate-400 hover:text-slate-700'
+              }`}
+            >
+              Sign In
+            </button>
+            <button
+              type="button"
+              onClick={() => { setMode('SIGNUP'); setErrorMessage(null); }}
+              className={`py-2 text-xs font-bold rounded-lg transition-all ${
+                mode === 'SIGNUP'
+                  ? 'bg-white dark:bg-slate-800 text-cyan-600 dark:text-cyan-400 shadow-sm'
+                  : 'text-slate-500 dark:text-slate-400 hover:text-slate-700'
+              }`}
+            >
+              Create Account
+            </button>
+          </div>
+        )}
 
         {/* Form Body */}
         <form onSubmit={handleSubmit} className="mt-5 space-y-4">
-          {mode === 'SIGNUP' && (
+          {allowSignup && mode === 'SIGNUP' && (
             <div>
               <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
                 Full Name

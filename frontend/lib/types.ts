@@ -70,7 +70,8 @@ export interface ShareRequest {
   documentId: string;
   permission: PermissionType;
   expiresIn: number; // in seconds
-  targetUserId?: string;
+  /** Required recipient: an existing account email or user ID. */
+  targetUserId: string;
 }
 
 export interface ShareResponse {
@@ -78,7 +79,8 @@ export interface ShareResponse {
   documentId: string;
   fileName: string;
   permission: PermissionType;
-  targetUserId?: string;
+  targetUserId: string;
+  targetEmail: string;
   httpMethod: 'GET' | 'PUT';
   expiresInSeconds: number;
   expiresAt: string;
@@ -90,6 +92,7 @@ export interface OpenDocumentResponse {
   url: string;
   fileName: string;
   contentType: string;
+  expiresAt?: string;
   expiresInSeconds: number;
 }
 

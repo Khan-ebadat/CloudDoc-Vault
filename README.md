@@ -30,7 +30,8 @@ CloudDoc Vault is a full-stack, zero-trust document vault built with a **Next.js
 
 - 🔐 **User isolation** — every object is stored at `vault/{userId}/{documentId}/{fileName}`; the bucket blocks all public access and uses SSE-S3 (AES-256).
 - 🔑 **JWT authentication** — PBKDF2 password hashing with per-user salts and signed session tokens.
-- ⏳ **Ephemeral sharing** — SigV4 pre-signed GET links that expire in 15 minutes to 7 days.
+- ⏳ **Ephemeral sharing** — short links that live 15 minutes to 7 days; each successful open issues a fresh view-only S3 GET URL valid for at most 60 seconds, never longer than the link itself.
+- 🎯 **Recipient-restricted links** — a link is bound to an existing CloudDoc Vault account; possession of the share code alone is not enough to open it.
 - 👁️ **View-only sharing** — the UI only offers read-only access. Edit/Write options were intentionally removed because a pre-signed PUT is a full overwrite, not collaborative editing.
 - 📨 **Email notifications** — SNS topic with one filtered subscription per user, so alerts are routed only to the intended recipient.
 - 📊 **Dashboard** — storage usage, file-type breakdown, search/filter, share notifications, and dark/light themes.
@@ -51,14 +52,15 @@ CloudDoc Vault is a full-stack, zero-trust document vault built with a **Next.js
         +--> AuthFunction          (signup, login, notification status)
         +--> UploadDocumentFunction
         +--> GetDocumentsFunction
-        +--> ShareDocumentFunction
+        +--> ShareDocumentFunction (creates recipient-bound short links)
+        +--> ResolveShareFunction  (verifies recipient, signs short GET URL)
         +--> OpenDocumentFunction
         +--> DeleteDocumentFunction
                  |
-     +-----------+-----------+-----------+
-     v           v           v           v
-   Amazon     DynamoDB    DynamoDB    Amazon SNS
-     S3       Clouddoc    Documents   CloudDocVault_Events
+     +-----------+-----------+-----------+-----------+
+     v           v           v           v           v
+   Amazon     DynamoDB    DynamoDB    DynamoDB    Amazon SNS
+     S3       Clouddoc    Documents   ShareLinks  CloudDocVault_Events
              Users       Metadata
 ```
 
@@ -66,6 +68,7 @@ CloudDoc Vault is a full-stack, zero-trust document vault built with a **Next.js
 
 - `ClouddocUsers` — partition key `Email`, GSI `UserIDIndex`; stores password hash, salt, user profile, and SNS subscription state.
 - `DocumentsMetadata` — partition key `DocumentID`, GSI `OwnerIDIndex`; stores file metadata, content type, S3 key, and the `SharedWith` permission array.
+- `ShareLinks` — partition key `ShareCode`, TTL on `ExpiresAtEpoch`; stores `RecipientUserId` and normalized `RecipientEmail` alongside document ID and expiry.
 - S3 — private documents bucket + a separate versioned bucket for SAM artifacts.
 - SNS — one topic, per-user filter policies on the `recipient` message attribute.
 
@@ -94,13 +97,17 @@ CloudDoc-Vault/
 │   │   ├── authHandler.js            # signup, login, SNS status
 │   │   ├── uploadHandler.js          # base64 -> S3 + metadata + alert
 │   │   ├── getDocumentsHandler.js    # owned + shared docs, storage metrics
-│   │   ├── shareHandler.js           # generates VIEW pre-signed GET links
+│   │   ├── shareHandler.js           # creates recipient-bound VIEW share links
+│   │   ├── resolveShareHandler.js    # verifies recipient, signs short GET URLs
 │   │   ├── openHandler.js            # preview/download GET links
 │   │   └── deleteHandler.js          # owner-only delete
 │   ├── lib/
 │   │   ├── authUtils.js              # PBKDF2 hashing + JWT signing/verification
 │   │   ├── awsClients.js             # AWS SDK v3 clients + CORS headers
-│   │   └── notifications.js          # per-user SNS subscriptions/publishes
+│   │   ├── notifications.js          # per-user SNS subscriptions/publishes
+│   │   └── shareRecipient.js         # recipient lookup + stored-recipient checks
+│   ├── test/
+│   │   └── shareLinks.test.js        # node:test recipient/expiry tests
 │   ├── template.yaml                 # SAM infrastructure definition
 │   ├── samconfig.toml                # deploy configuration
 │   ├── package.json
@@ -109,9 +116,10 @@ CloudDoc-Vault/
 │   └── .aws-sam/                     # local build output (gitignored)
 ├── frontend/
 │   ├── app/
-│   │   ├── page.tsx                  # dashboard
-│   │   ├── login/page.tsx
-│   │   ├── signup/page.tsx
+│   │   ├── page.tsx                  # landing + dashboard
+│   │   ├── s/[code]/page.tsx         # sign-in/resume + share link resolver
+│   │   ├── forgot-password/page.tsx
+│   │   ├── reset-password/page.tsx
 │   │   ├── layout.tsx                # metadata + favicon
 │   │   └── globals.css
 │   ├── components/                   # Navbar, UploadModal, ShareModal, etc.
@@ -145,7 +153,7 @@ CloudDoc-Vault/
 
 ## 6. API endpoints
 
-All routes are under the API Gateway base URL. Protected routes require `Authorization: Bearer <jwt>`.
+All routes are under the API Gateway base URL. Every route except signup/login/password reset and the CORS preflight requires `Authorization: Bearer <jwt>`.
 
 | Method | Route | Purpose |
 |---|---|---|
@@ -154,19 +162,24 @@ All routes are under the API Gateway base URL. Protected routes require `Authori
 | GET | `/auth/notifications` | Refresh SNS subscription status |
 | POST | `/documents` | Upload a document (base64 body) |
 | GET | `/documents` | List documents owned by or shared with the user |
-| POST | `/documents/share` | Create a VIEW pre-signed GET link for a recipient |
+| POST | `/documents/share` | Create a VIEW short link bound to an existing recipient account (`recipient`: email or user ID; `expiresIn`: 60–604800 seconds) |
+| GET | `/share/{code}` | Verify the signed-in recipient, then return a fresh ≤60-second S3 GET URL |
 | GET | `/documents/{id}/download` | Preview (`inline`) or forced download (`?download=1`) |
 | DELETE | `/documents/{id}` | Delete an owned document from S3 + DynamoDB |
+
+`GET /share/{code}` returns 401 without a valid token, 403 when the token's user is not the stored recipient (including legacy links with no recipient), 404 for unknown codes, and 410 for expired links.
 
 ---
 
 ## 7. Security model
 
 - **Private by default** — no public bucket access; all reads/writes go through SigV4 pre-signed URLs generated by Lambda.
-- **JWT verification** — every protected handler validates the bearer token before touching data.
+- **JWT verification** — every protected handler validates the bearer token before touching data, including the share resolver.
+- **Recipient-bound links** — creation resolves the recipient email/user ID to a real account and stores `RecipientUserId` + normalized `RecipientEmail` on the `ShareLinks` record.
+- **No code-only access** — the resolver compares the verified token's `userId` with the stored recipient before reading document metadata or signing anything; a different signed-in user gets 403, a signed-out visitor gets 401, and legacy links without recipient details fail closed.
 - **Owner checks** — deletion is restricted to `OwnerID`; opening/sharing validates entry in `SharedWith` or ownership.
 - **View-only UI** — the share modal only issues GET links. EDIT/WRITE are not exposed in the frontend.
-- **Link expiry** — 15 minutes to 7 days, chosen at share time.
+- **Two expiry windows** — the short link lives 15 minutes to 7 days (chosen at share time); each resolution issues a fresh S3 URL capped at 60 seconds and never beyond the link's remaining lifetime.
 - **No secrets in git** — `.gitignore` excludes `.env*`, AWS credentials, keys, and build output. Only `.env.example` templates are committed.
 
 ---
@@ -179,7 +192,9 @@ All routes are under the API Gateway base URL. Protected routes require `Authori
 
 **Open / Preview** — `openHandler` creates a 15-minute GET URL. Text-like MIME types are overridden to `text/plain; charset=utf-8` for inline rendering; forced downloads keep the real MIME type.
 
-**Share** — owner picks a recipient (UserID or email) and expiry. `shareHandler` stores the permission in `SharedWith`, generates a pre-signed GET link, and publishes a `DOCUMENT_SHARED` alert to the recipient. **The link itself is not emailed** — the owner copies it from the modal.
+**Share** — the owner must pick a recipient (existing account email or user ID) and an expiry. Email is normalized (`trim().toLowerCase()`) and looked up in `ClouddocUsers`; user IDs are checked against `UserIDIndex`. Unknown accounts are rejected. `shareHandler` updates `SharedWith`, stores the resolved recipient ID and email on a new `ShareLinks` record, creates `/s/{code}`, and publishes a `DOCUMENT_SHARED` alert to the recipient address. The owner copies the link from the modal.
+
+**Open a shared link** — `/s/[code]` calls `GET /share/{code}` with the login JWT. If the visitor is signed out (401), the page shows a sign-in dialog and retries the same code after login; a signed-in non-recipient (403) can switch accounts. Only after the backend confirms the stored recipient does `resolveShareHandler` generate a view-only S3 GET URL (≤60 seconds, never past the link's expiry) and the page redirects to it.
 
 **Delete** — owner-only; removes both the S3 object and the DynamoDB item.
 
@@ -197,9 +212,17 @@ npm run dev
 # Backend (local invoke / tests)
 cd backend
 npm install
+npm test                 # node:test share-link authorization tests
 # Set environment vars from .env.example in your shell or Lambda config
 sam build --no-cached
 sam local invoke AuthFunction -e events.json
+```
+
+Frontend type checks (also run as part of `npm run build`):
+
+```bash
+cd frontend
+npm run typecheck
 ```
 
 Windows note: if `sam build` fails with long-path errors, set the temp dirs first:
@@ -254,11 +277,13 @@ If a secret is ever committed, rotate it immediately (generate a new JWT secret 
 | Symptom | Fix |
 |---|---|
 | `NEXT_API_URL is not configured` | Add the env var in Vercel **before** building, then redeploy. |
-| `401 Unauthorized` | JWT missing/expired — log in again. |
+| `401 Unauthorized` | JWT missing/expired — sign in again; share links always require a signed-in user. |
 | `sam build` long-path error on Windows | Use `C:\tmp` for `TEMP`/`TMP` and keep `backend/.npmignore`. |
 | CSV/JSON downloads instead of opening | Expected for browsers without a renderer — preview now serves them as `text/plain`. |
 | SNS alert not received | Click the AWS subscription confirmation email; check the dashboard banner. |
-| Shared link 403 | Link expired or recipient not in `SharedWith` — ask the owner to re-share. |
+| Share creation says "Recipient account not found" | The email/user ID must belong to an existing CloudDoc Vault account; ask the recipient to sign up first. |
+| Shared link 403 | You are not the stored recipient (or the link predates recipient tracking) — sign in as the recipient or ask the owner to re-share. |
+| Shared link 410 | The link expired; ask the owner to create a new one. |
 
 ---
 

@@ -10,7 +10,7 @@ Parameters:
   FrontendBaseUrl:
     Type: String
     Default: 'http://localhost:3000'
-    Description: Base URL of the frontend app, used for password reset links.
+    Description: Base URL of the frontend app, used for password reset and share links.
 
 Conditions:
   HasNotificationEmail: !Not [!Equals [!Ref NotificationEmail, '']]
